@@ -5,38 +5,53 @@
 //  Created by Platts Andrew on 13/12/2025.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var ble: BLEManager
     @Query private var items: [Item]
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
+        TabView {
+            // Home tab renders inline content here
+            NavigationStack {
+                VStack(spacing: 16) {
+                    Text("Welcome to InjuryIQ")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Text("This is the Home screen.")
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.teal))
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .tabItem { Label("Home", systemImage: "house") }
+
+            // Explore tab
+            NavigationStack {
+                ExploreView()
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .tabItem { Label("Explore", systemImage: "sparkles") }
+
+            // Settings tab
+            NavigationStack {
+                SettingsView()
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .tabItem { Label("Settings", systemImage: "gear") }
+        }        
+        .onAppear {
+                    // ✅ Ensure BLE uses the exact same ModelContext as SwiftUI
+                    if ble.modelContext == nil {
+                        ble.attach(modelContext: modelContext)
+                        print("[ContentView] Attached BLE to view modelContext")
                     }
                 }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
-        }
+
     }
 
     private func addItem() {
@@ -57,5 +72,21 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+        //.modelContainer(for: Item.self, inMemory: true)
+        //.environmentObject(BLEManager.shared)
+        .environmentObject(BLEManager.shared)
+        .modelContainer(
+            {
+                let schema = Schema([Item.self, KnownDevice.self])
+                let config = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: true
+                )
+                return try! ModelContainer(
+                    for: schema,
+                    configurations: [config]
+                )
+            }()
+        )
+
 }
