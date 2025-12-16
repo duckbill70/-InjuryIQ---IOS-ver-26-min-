@@ -24,10 +24,31 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var isBluetoothOn: Bool = false
     @Published var isScanning: Bool = false
     @Published var discovered: [DiscoveredPeripheral] = []
-    @Published var connectedPeripheral: CBPeripheral?
-    @Published var services: [CBService] = []
-    @Published var characteristicsByService: [CBService: [CBCharacteristic]] =
-        [:]
+	
+	@Published var connectedPeripherals: [CBPeripheral] = [] {
+		didSet {
+		  //print("[BLE] connectedPeripherals updated: \(connectedPeripherals)")
+		}
+	}
+	
+	@Published var connectedInfo: [ConnectedInfo] = []
+	@Published var services: [CBService] = []
+	
+	@Published var characteristicsByPeripheral: [UUID: [CBUUID: CBCharacteristic]] = [:] {
+		didSet {
+		  //print("[BLE] characteristicsByPeripheral updated: \(characteristicsByPeripheral)")
+		}
+	}
+	
+	///Device Sessions
+	@Published var sessionsByPeripheral: [UUID: PeripheralSession] = [:]
+	{
+	   didSet {
+		 //print("[BLE] sessionsByPeripheral updated: \(sessionsByPeripheral)")
+	   }
+   }
+    
+	@Published var characteristicsByService: [CBService: [CBCharacteristic]] = [:]
     @Published var lastError: String?
     @Published var bluetoothState: String = "Initializing..."
     @Published var lastConnectedInfo: ConnectedInfo?
@@ -60,7 +81,6 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     
-    @MainActor
     func attach(modelContext: ModelContext) {
         precondition(Thread.isMainThread, "[BLE] attach must run on main thread")
         self.modelContext = modelContext
@@ -83,7 +103,6 @@ final class BLEManager: NSObject, ObservableObject {
 
 
     /// Persist known device info to SwiftData
-    @MainActor
     private func persistKnownDevice(uuid: UUID, name: String) {
         assert(Thread.isMainThread, "[BLE] persistKnownDevice must run on main thread")
         guard let ctx = self.modelContext else {
@@ -115,6 +134,17 @@ final class BLEManager: NSObject, ObservableObject {
         } catch {
             let nsError = error as NSError
             print("[BLE] SwiftData Error: \(nsError.domain) (\(nsError.code)) - \(nsError.localizedDescription)")
+        }
+    }
+    
+    /// Update KnownDevices
+    private func updateKnownDevice(uuid: UUID, isConnected: Bool) {
+        if let modelContext = modelContext {
+            let predicate = #Predicate<KnownDevice> { $0.uuid == uuid }
+            if let device = try? modelContext.fetch(FetchDescriptor(predicate: predicate)).first {
+                device.isConnected = isConnected
+                try? modelContext.save()
+            }
         }
     }
 
@@ -201,11 +231,12 @@ final class BLEManager: NSObject, ObservableObject {
         central.connect(dp.peripheral, options: nil)
     }
 
-    func disconnect() {
-        if let p = connectedPeripheral {
-            print("[BLE] Disconnecting from: \(p.name ?? "Unknown")")
-            central.cancelPeripheralConnection(p)
-        }
+    func disconnect(_ peripheral: CBPeripheral) {
+        //if let p = connectedPeripheral {
+            print("[BLE] Disconnecting from: \(peripheral.name ?? "Unknown")")
+        //    central.cancelPeripheralConnection(p)
+        //}
+		central.cancelPeripheralConnection(peripheral)
     }
 }
 
@@ -252,15 +283,16 @@ extension BLEManager: CBCentralManagerDelegate {
         }
     }
 
-    func centralManager(
-        _ central: CBCentralManager,
-        didConnect peripheral: CBPeripheral
-    ) {
+    func centralManager( _ central: CBCentralManager,  didConnect peripheral: CBPeripheral ) {
         let uuid = peripheral.identifier
         let name = peripheral.name ?? "Unknown"
 
-        connectedPeripheral = peripheral
-        lastConnectedInfo = ConnectedInfo(uuid: uuid, name: name)
+        //connectedPeripheral = peripheral
+		connectedPeripherals.append(peripheral)
+		connectedInfo.append(ConnectedInfo(uuid: uuid, name: name))
+		
+		lastConnectedInfo = ConnectedInfo(uuid: uuid, name: name)
+        
         print("[BLE] Connected to: \(name)")
 
         peripheral.delegate = self
@@ -268,42 +300,37 @@ extension BLEManager: CBCentralManagerDelegate {
 
         Task { @MainActor in
             persistKnownDevice(uuid: peripheral.identifier, name: name)
+            updateKnownDevice(uuid: uuid, isConnected: true)
         }
 
-        // Call MainActor-isolated method with Task
-        //Task { @MainActor in
-        //    self.persistKnownDevice(uuid: uuid, name: name)
-        //}
     }
 
-    func centralManager(
-        _ central: CBCentralManager,
-        didFailToConnect peripheral: CBPeripheral,
-        error: Error?
-    ) {
+    func centralManager( _ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error? ) {
         let errorMsg = error?.localizedDescription ?? "Unknown error"
         print("[BLE] Failed to connect: \(errorMsg)")
         lastError = errorMsg
     }
 
-    func centralManager(
-        _ central: CBCentralManager,
-        didDisconnectPeripheral peripheral: CBPeripheral,
-        error: Error?
-    ) {
+    func centralManager( _ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error? ) {
         print("[BLE] Disconnected from: \(peripheral.name ?? "Unknown")")
-        connectedPeripheral = nil
+
+		connectedPeripherals.removeAll { $0.identifier == peripheral.identifier }
+		connectedInfo.removeAll { $0.uuid == peripheral.identifier }
         services.removeAll()
         characteristicsByService.removeAll()
+		
+		// Remove characteristics and sessions for the disconnected peripheral
+		characteristicsByPeripheral.removeValue(forKey: peripheral.identifier)
+		sessionsByPeripheral.removeValue(forKey: peripheral.identifier)
+		
+        updateKnownDevice(uuid: peripheral.identifier, isConnected: false)
     }
 }
 
 // MARK: - CBPeripheralDelegate
 extension BLEManager: CBPeripheralDelegate {
-    func peripheral(
-        _ peripheral: CBPeripheral,
-        didDiscoverServices error: Error?
-    ) {
+	
+    func peripheral( _ peripheral: CBPeripheral, didDiscoverServices error: Error? ) {
         if let error = error {
             lastError = error.localizedDescription
             print("[BLE] Error discovering services: \(error)")
@@ -315,18 +342,38 @@ extension BLEManager: CBPeripheralDelegate {
         svcs.forEach { peripheral.discoverCharacteristics(nil, for: $0) }
     }
 
-    func peripheral(
-        _ peripheral: CBPeripheral,
-        didDiscoverCharacteristicsFor service: CBService,
-        error: Error?
-    ) {
-        if let error = error {
-            lastError = error.localizedDescription
-            print("[BLE] Error discovering characteristics: \(error)")
-            return
-        }
-        let chars = service.characteristics ?? []
-        print("[BLE] Discovered \(chars.count) characteristics for service")
-        characteristicsByService[service] = chars
+    func peripheral( _ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,  error: Error? ) {
+		if let error = error {
+				lastError = error.localizedDescription
+				print("[BLE] Error discovering characteristics: \(error)")
+				return
+			}
+			let chars = service.characteristics ?? []
+			print("[BLE] Discovered \(chars.count) characteristics for service")
+			characteristicsByService[service] = chars
+
+			var session = sessionsByPeripheral[peripheral.identifier] ?? PeripheralSession(peripheral: peripheral, characteristics: [:])
+			for char in chars {
+				session.addCharacteristic(char)
+			}
+			sessionsByPeripheral[peripheral.identifier] = session
+		
     }
+	
+	func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+		if let error = error {
+			print("[BLE] Error receiving notification for \(characteristic.uuid): \(error)")
+			lastError = error.localizedDescription
+			return
+		}
+		guard let value = characteristic.value else {
+			print("[BLE] No value received for \(characteristic.uuid)")
+			return
+		}
+		// Pass the value to the PeripheralSession
+		if var session = sessionsByPeripheral[peripheral.identifier] {
+			session.handleNotification(for: characteristic, value: value)
+			sessionsByPeripheral[peripheral.identifier] = session
+		}
+	}
 }

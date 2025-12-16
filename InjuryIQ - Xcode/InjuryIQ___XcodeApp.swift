@@ -10,6 +10,8 @@ struct InjuryIQApp: App {
     private var modelContainer: ModelContainer?
     private var showLaunch: Bool = true
     @State private var showLaunchState: Bool = true
+	
+	@State private var sports = Sports()
     
     private let fallbackContainer: ModelContainer = {
         let schema = Schema([Item.self, KnownDevice.self])
@@ -48,7 +50,7 @@ struct InjuryIQApp: App {
                             }
                         }
                 } else {
-                    ContentView()
+					ContentView(sports: sports)
                         .environmentObject(BLEManager.shared)
                 }
             }

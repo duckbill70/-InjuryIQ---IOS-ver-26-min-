@@ -86,7 +86,7 @@ struct PeripheralDetailView: View {
             }
             Divider()
 
-            if let connected = ble.connectedPeripheral, connected.identifier == dp.id {
+			if let connected = ble.connectedPeripherals.first(where: { $0.identifier == dp.id }) {
                 List {
                     Section("Services") {
                         ForEach(ble.services, id: \ .uuid) { service in

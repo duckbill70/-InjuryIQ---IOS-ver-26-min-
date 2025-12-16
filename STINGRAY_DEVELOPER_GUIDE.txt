@@ -1,0 +1,690 @@
+================================================================================
+                          STINGRAY DEVICE DOCUMENTATION
+                    Operational Flows & BLE Interface Guide
+================================================================================
+
+TABLE OF CONTENTS
+================================================================================
+1. Device Overview
+2. Device States & Transitions
+3. Operational Flows
+4. BLE Services & Characteristics
+5. Command Reference
+6. Data Formats
+7. Error Handling
+
+================================================================================
+1. DEVICE OVERVIEW
+================================================================================
+
+The StingRay device is an IMU (Inertial Measurement Unit) data logger for the
+XIAO BLE Sense platform (nRF52840). It captures accelerometer and gyroscope
+data at 100 Hz and streams it via Bluetooth Low Energy (BLE) to a mobile app.
+
+KEY FEATURES:
+- Real-time IMU data acquisition (100 Hz sampling)
+- BLE streaming of FIFO data via Notifications
+- Dynamic device naming based on MAC address (STINGRAY XXXX)
+- Battery monitoring (ADC-based voltage reading)
+- Step counting with fatigue estimation
+- Error & Warning log forwarding over BLE
+- USB serial output (diagnostics only)
+- LED feedback (Red=STOP, Green=RUN, Blue=DUMPING)
+
+HARDWARE TARGETS:
+- Board: Seeed XIAO BLE (nRF52840)
+- IMU: LSM6DSL (I2C @ 0x6A, polling mode 100 Hz)
+- Battery: ADC input, AIN7 (P0.31), divider ratio 1.183
+- Comms: BLE 5.4 (Peripheral), USB CDC-ACM (logging only)
+
+================================================================================
+2. DEVICE STATES & TRANSITIONS
+================================================================================
+
+The device operates in one of five states:
+
+┌─────────────────────────────────────────────────────────────────┐
+│ STATE ENUM: CMD_STATE_*                                         │
+├─────────────────────────────────────────────────────────────────┤
+│ 0 = STOP                 Device idle, FIFO not recording        │
+│ 1 = RUN                  Device recording IMU data to FIFO      │
+│ 2 = SNAPSHOTTING         (Deprecated; flash snapshots removed)  │
+│ 3 = DUMPING              Device streaming FIFO to BLE           │
+│ 4 = SHOWING_LOCATION     LED displaying location color (5 sec)  │
+└─────────────────────────────────────────────────────────────────┘
+
+STATE TRANSITIONS:
+
+  STOP ────────→ RUN
+    ↑             │
+    └─────────────┘
+        (on CMD_STOP)
+
+  RUN ────────→ DUMPING
+    │             │
+    │             └──────→ STOP (after stream completes)
+    │                       ↓
+    └───────────────────────┘
+        (on CMD_SNAP_DUMP if FIFO full)
+
+  STOP ───────→ SHOWING_LOCATION ───→ STOP
+                (on CMD_LOCATION)
+                   (5 sec display)
+
+================================================================================
+3. OPERATIONAL FLOWS
+================================================================================
+
+FLOW 1: BASIC RECORDING & STREAMING
+──────────────────────────────────────
+
+  1. Device boots → Advertises as "STINGRAY 307B"
+     - Connects to BLE app (Punch Through)
+
+  2. App sends CMD_RUN
+     - Device state → RUN
+     - IMU FIFO starts capturing at 50 Hz (3000-sample buffer)
+     - LED turns GREEN
+
+  3. FIFO fills up or app decides to stop
+     - App sends CMD_SNAP_DUMP
+
+  4. Device behavior:
+     a) If FIFO is FULL:
+        - Stop recording immediately
+        - State → DUMPING
+        - LED turns BLUE
+        - Start BLE streaming thread
+        - Send FIFO data in ~255-byte chunks via Streaming Service
+        - Each packet includes sequence number + header
+        - Status notifications sent every 500ms (progress)
+
+     b) If FIFO is NOT full:
+        - State → DUMPING
+        - Wait for FIFO to fill (background thread checks every 100ms)
+        - Once full, start streaming (same as 4a)
+
+  5. Streaming completes
+     - State → RUN (auto-resume)
+     - FIFO cleared
+     - Recording resumes at 50 Hz
+     - LED turns GREEN
+
+FLOW 2: STOP RECORDING WITHOUT STREAMING
+──────────────────────────────────────────
+
+  1. App sends CMD_STOP
+     - Device stops IMU recording (if recording)
+     - FIFO is cleared (data lost)
+     - State → STOP
+     - LED turns RED (or BLE-connected color)
+
+FLOW 3: PARTIAL SNAPSHOT
+─────────────────────────
+
+  1. App sends CMD_STOP_SNAP
+     - Device stops recording
+     - FIFO is cleared without streaming
+     - State → STOP
+     - Note: FIFO data is discarded; no BLE streaming
+
+FLOW 4: LOCATION INDICATION
+────────────────────────────
+
+  1. App sends CMD_LOC_RED or CMD_LOC_GREEN
+     - Sets location state (0 = RED, 1 = GREEN)
+     - Notifies app via Location characteristic
+
+  2. App sends CMD_LOCATION
+     - Device displays the location color on LED for 5 seconds
+     - State → SHOWING_LOCATION
+     - After 5 sec, returns to previous state (STOP or RUN)
+
+FLOW 5: DIAGNOSTICS & TESTING
+──────────────────────────────
+
+  1. App sends CMD_IMU_TEST (device must be STOP state)
+     - Device reads one IMU sample and logs accel/gyro values
+     - Output goes to RTT console only (not BLE)
+
+  2. App sends CMD_FIFO_STATS (any state)
+     - Device logs FIFO buffer statistics to RTT
+     - Shows: capacity, samples stored, memory used, sample rate, etc.
+
+  3. App sends CMD_RESET_STEPS
+     - Resets step counter to 0
+     - Notifies via Steps Service
+
+================================================================================
+4. BLE SERVICES & CHARACTERISTICS
+================================================================================
+
+PRIMARY SERVICE: Command Service
+────────────────────────────────────────
+UUID: 12345679-1234-5678-1234-56789abcdef0
+
+ 4.1) Command Characteristic
+  ────────────────────────────
+  UUID:       12345679-1234-5678-1234-56789abcdef1
+  Properties: READ, WRITE, NOTIFY
+  Permissions: READ, WRITE
+  Value Type: uint8_t (1 byte)
+
+  Purpose: Send commands to device; notify app of state changes
+
+  WRITE Values (Commands):
+  ├─ 0x01 (1)  = CMD_RUN           Start IMU recording
+  ├─ 0x02 (2)  = CMD_STOP          Stop recording, clear FIFO
+  ├─ 0x03 (3)  = CMD_STOP_SNAP     Stop & snapshot (clear without stream)
+  ├─ 0x04 (4)  = CMD_RESET         Clear FIFO and state
+  ├─ 0x05 (5)  = CMD_DUMP          (DEPRECATED - use CMD_SNAP_DUMP)
+  ├─ 0x10 (16) = CMD_LOC_RED       Set location to RED
+  ├─ 0x11 (17) = CMD_LOC_GREEN     Set location to GREEN
+  ├─ 0x12 (18) = CMD_RESET_STEPS   Reset step counter
+  ├─ 0x13 (19) = CMD_IMU_TEST      Read & log one IMU sample
+  ├─ 0x14 (20) = CMD_FIFO_STATS    Log FIFO statistics
+  ├─ 0x15 (21) = CMD_LOCATION      Show location color on LED for 5 sec
+  ├─ 0x20 (32) = CMD_SNAPSHOT      (DEPRECATED)
+  ├─ 0x21 (33) = CMD_SNAP_DELETE   (DEPRECATED)
+  └─ 0x30 (48) = CMD_SNAP_DUMP     Stop & stream FIFO via BLE
+
+  READ Values (Device State):
+  └─ 0x00 (0)  = STOP
+     0x01 (1)  = RUN
+     0x03 (3)  = DUMPING
+     0x04 (4)  = SHOWING_LOCATION
+
+ 4.2) Stats Characteristic
+  ────────────────────────
+  UUID:       12345679-1234-5678-1234-56789abcdef2
+  Properties: READ, NOTIFY
+  Permissions: READ
+  Value Type: Packed binary struct (20 bytes)
+
+  Purpose: Query FIFO buffer statistics periodically
+
+  Layout (little-endian):
+  ├─ Offset 0  (u16)  samples_stored
+  ├─ Offset 2  (u16)  samples_dropped
+  ├─ Offset 4  (u32)  total_captured
+  ├─ Offset 8  (u16)  duration_sec
+  ├─ Offset 10 (u16)  actual_rate_hz
+  ├─ Offset 12 (u16)  buffer_capacity (3000 for xiao_ble)
+  ├─ Offset 14 (u8)   is_recording (1 = recording, 0 = stopped)
+  └─ Offset 15 (u8)   is_full (1 = buffer full, 0 = space available)
+
+  Notification: Sent automatically every 1 second when recording (RUN state)
+
+ 4.3) Location Characteristic
+  ────────────────────────────
+  UUID:       12345679-1234-5678-1234-56789abcdef3
+  Properties: READ, NOTIFY
+  Permissions: READ
+  Value Type: uint8_t (1 byte)
+
+  Purpose: Track location state (RED or GREEN)
+
+  Values:
+  ├─ 0 = RED
+  └─ 1 = GREEN
+
+ 4.4) Snapshot Status Characteristic
+  ──────────────────────────────────
+  UUID:       12345679-1234-5678-1234-56789abcdef4
+  Properties: READ, NOTIFY
+  Permissions: READ
+  Value Type: uint8_t (1 byte)
+
+  Purpose: (DEPRECATED) Legacy flash snapshot status
+
+  Note: Always returns 0 (no flash snapshots in current design)
+  Notification: Sent every 5 seconds (no-op)
+
+ 4.5) Error Characteristic
+  ────────────────────────
+  UUID:       12345679-1234-5678-1234-56789abcdef5
+  Properties: READ, NOTIFY
+  Permissions: READ
+  Value Type: ASCII string (up to 20 bytes)
+
+  Purpose: Receive device WARN/ERROR logs
+
+  Behavior:
+  ├─ Device caches latest error message
+  ├─ On CCC enable, sends cached message immediately (if any)
+  ├─ Each new WARN/ERR is sent as notification
+  ├─ Read returns current cached message
+  └─ Rate-limited to 1 notification per 200ms
+
+  Example: "System overload"
+           "FIFO full"
+           "IMU timeout"
+
+════════════════════════════════════════════════════════════════════════════════
+
+SECONDARY SERVICE: Streaming Service
+─────────────────────────────────────
+UUID: 1cbdd1a0-6502-467a-933e-12abbc3dd651
+
+Purpose: High-bandwidth FIFO data streaming during CMD_SNAP_DUMP
+
+ 4.6) Stream Characteristic
+  ──────────────────────────
+  UUID:       d0a9f1cc-96a9-46ad-b65f-c13e3c30b7cf
+  Properties: NOTIFY
+  Permissions: NONE (notify-only)
+  Value Type: Binary data (up to 255 bytes)
+
+  Format: [HEADER (4B)] + [SAMPLES (N × 24B)]
+
+  Header:
+  ├─ Offset 0-1 (u16 LE)  sequence_number (increments per packet)
+  └─ Offset 2-3 (u16 LE)  reserved (0)
+
+  Samples (each is 24 bytes, format: ax, ay, az, gx, gy, gz as int16_t LE):
+  ├─ Offset 0-1   (s16 LE)  accel_x (mg)
+  ├─ Offset 2-3   (s16 LE)  accel_y (mg)
+  ├─ Offset 4-5   (s16 LE)  accel_z (mg)
+  ├─ Offset 6-7   (s16 LE)  gyro_x  (mDeg/s)
+  ├─ Offset 8-9   (s16 LE)  gyro_y  (mDeg/s)
+  └─ Offset 10-11 (s16 LE)  gyro_z  (mDeg/s)
+
+  Typical Packet: 4B header + ~10 samples = 244 bytes (fits in one BLE MTU)
+
+  Pacing: ~1 packet per 10ms (configurable via cfg.tick_ms / cfg.packets_per_tick)
+
+ 4.7) Stream Status Characteristic
+  ────────────────────────────────
+  UUID:       e59e68c2-8a2d-4f9b-8a5c-81d6b1d5e2f3
+  Properties: READ, NOTIFY
+  Permissions: READ
+  Value Type: Packed binary struct (8 bytes)
+
+  Purpose: Monitor streaming progress
+
+  Layout (little-endian):
+  ├─ Offset 0-3 (u32 LE)  total_bytes
+  ├─ Offset 4-7 (u32 LE)  bytes_sent
+  └─ (Implied) last_seq = (bytes_sent / sample_size)
+
+  Notification: Sent every 500ms during streaming
+
+  Usage: Calculate progress as (bytes_sent / total_bytes) × 100%
+
+════════════════════════════════════════════════════════════════════════════════
+
+TERTIARY SERVICES (Standard BLE):
+──────────────────────────────────
+
+ 4.8) Battery Service
+  ────────────────────
+  Standard BLE Battery Service (0x180F)
+
+  Battery Level Characteristic (0x2A19):
+  ├─ Value: 0–100 (percentage)
+  ├─ Permissions: READ, NOTIFY
+  └─ Updated: ~1 per second
+
+ 4.9) Device Information Service (Optional)
+  ─────────────────────────────────────────
+  Standard BLE Device Information Service (0x180A)
+
+ 4.10) Steps / Pedometer Service
+  ──────────────────────────────
+  UUID: 12345679-1234-5678-1234-56789abcdef6 (custom)
+
+  Step Count Characteristic:
+  ├─ Value: uint32_t (total steps counted)
+  ├─ Permissions: READ, NOTIFY
+  └─ Updated: Every 10 seconds or on step event
+
+ 4.11) Fatigue Monitoring Service
+  ────────────────────────────────
+  UUID: 12345679-1234-5678-1234-56789abcdef7 (custom)
+
+  Fatigue Level Characteristic:
+  ├─ Value: uint8_t (0–100, fatigue index)
+  ├─ Permissions: READ, NOTIFY
+  └─ Updated: Every monitoring interval
+  └─ Test mode: Auto-increments every second
+
+================================================================================
+5. COMMAND REFERENCE
+================================================================================
+
+All commands are issued by WRITING to the Command Characteristic.
+Device responds with state notifications and log output.
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: RUN (0x01)                                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Start IMU recording                                              │
+│ Precond:   Device must be in STOP state                                     │
+│ Effect:    - State → RUN                                                    │
+│            - FIFO is cleared and begins capturing at 50 Hz                   │
+│            - LED turns GREEN                                                │
+│            - Stats notifications sent every 1 second                         │
+│ Response:  State notification (value=1)                                     │
+│            RTT: "CMD: RUN (FIFO cleared, starting fresh)"                  │
+│ Errors:    None (safe to call anytime)                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: STOP (0x02)                                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Stop recording and discard FIFO data                             │
+│ Precond:   None                                                             │
+│ Effect:    - State → STOP                                                   │
+│            - FIFO is cleared (data lost)                                    │
+│            - LED turns RED                                                  │
+│ Response:  State notification (value=0)                                     │
+│            RTT: "CMD: STOP - clearing FIFO (X samples)"                    │
+│ Errors:    None                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: SNAP_DUMP (0x30)  [PRIMARY STREAMING COMMAND]                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Stream FIFO data to app via BLE Streaming Service                │
+│ Precond:   BLE connection must be active                                    │
+│            Streaming Service must be subscribed                             │
+│ Behavior:  Device-led:                                                      │
+│            ├─ If FIFO is FULL: Stop, start streaming immediately            │
+│            └─ If NOT full: Wait until full, then stream (or timeout)        │
+│ Effect:    - State → DUMPING                                                │
+│            - LED turns BLUE                                                 │
+│            - Streaming thread sends packets every ~10ms                      │
+│            - Status notifications every 500ms (progress)                     │
+│            - On completion: State → RUN (auto-resume)                       │
+│            - FIFO cleared & recording resumes                               │
+│ Response:  Multiple Stream notifications                                    │
+│            Final Stream Status notification (bytes_sent == total_bytes)     │
+│            State notification (value=1 for RUN)                             │
+│ Errors:    "No valid BLE connection for streaming" → error response         │
+│            Stream failure logged to RTT + Error characteristic              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: LOC_RED (0x10)                                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Set location marker to RED                                       │
+│ Precond:   Device must be in STOP state                                     │
+│ Effect:    - location_state → 0 (RED)                                       │
+│            - Notifies Location characteristic                               │
+│ Response:  Location notification (value=0)                                  │
+│ Errors:    "not allowed while recording" if in RUN state                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: LOC_GREEN (0x11)                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Set location marker to GREEN                                     │
+│ Precond:   Device must be in STOP state                                     │
+│ Effect:    - location_state → 1 (GREEN)                                     │
+│            - Notifies Location characteristic                               │
+│ Response:  Location notification (value=1)                                  │
+│ Errors:    "not allowed while recording" if in RUN state                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: CMD_LOCATION (0x15)                                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Display location color on device LED for 5 seconds               │
+│ Precond:   Device must be in STOP state                                     │
+│ Effect:    - State → SHOWING_LOCATION                                       │
+│            - LED displays current location_state color (RED or GREEN)        │
+│            - Blocks for 5 seconds                                           │
+│            - State → STOP (restored)                                        │
+│ Response:  State notifications (4 → 0)                                      │
+│            RTT: "CMD: LOCATION (showing color X for 5 seconds)"            │
+│ Errors:    "not allowed while recording" if in RUN state                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: IMU_TEST (0x13)                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Diagnostic: read & log one IMU sample                            │
+│ Precond:   Device must be in STOP state                                     │
+│ Effect:    None (read-only)                                                 │
+│ Response:  RTT output:                                                      │
+│            "IMU Test: Sample #X @ Y ms"                                     │
+│            "  Accel: X=+1.234 Y=+5.678 Z=-9.102 m/s²"                     │
+│            "  Gyro:  X=+10.5 Y=-20.3 Z=+5.0 °/s"                          │
+│            "  Stats: total=1000 dropped=0"                                  │
+│ Errors:    "Failed to read data (err -X)" if IMU timeout                    │
+│            "not allowed while recording"                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: FIFO_STATS (0x14)                                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Log FIFO buffer statistics                                       │
+│ Precond:   None                                                             │
+│ Effect:    None (diagnostic output only)                                    │
+│ Response:  RTT output (multi-line):                                         │
+│            "=== FIFO Statistics ==="                                        │
+│            "  Samples stored: 2500 / 3000"                                  │
+│            "  Samples dropped: 0"                                           │
+│            "  Total captured: 1000000"                                      │
+│            "  Memory used: 60000 bytes (58.6 KB)"                           │
+│            "  Duration: 50000 ms (50.0 sec)"                                │
+│            "  Sample rate: 50 Hz (target: 50 Hz)"                           │
+│            "  Recording: YES"                                               │
+│            "  Buffer full: NO"                                              │
+│            "======================="                                        │
+│ Errors:    None                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: RESET_STEPS (0x12)                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Reset step counter to 0                                          │
+│ Precond:   Device must be in STOP state                                     │
+│ Effect:    - Step counter → 0                                               │
+│            - Notifies Steps Service                                         │
+│ Response:  Steps notification (value=0)                                     │
+│ Errors:    "not allowed while recording" if in RUN state                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMMAND: RESET (0x04)                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose:   Hard reset: clear FIFO and all state                             │
+│ Precond:   Device must be in STOP state                                     │
+│ Effect:    - FIFO cleared                                                   │
+│            - State remains STOP                                             │
+│ Response:  RTT: "CMD: RESET"                                                │
+│ Errors:    "RESET not allowed while recording" if in RUN state              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+DEPRECATED COMMANDS (no-op, logged as warnings):
+─────────────────────────────────────────────────
+  ├─ CMD_DUMP (0x05)       → Use CMD_SNAP_DUMP instead
+  ├─ CMD_SNAPSHOT (0x20)   → Flash snapshots removed; use BLE streaming
+  └─ CMD_SNAP_DELETE (0x21) → N/A (no flash)
+
+================================================================================
+6. DATA FORMATS
+================================================================================
+
+IMU SAMPLE FORMAT (24 bytes per sample):
+────────────────────────────────────────
+  Byte  0-1    (s16 LE)  accel_x  [milli-g]
+  Byte  2-3    (s16 LE)  accel_y  [milli-g]
+  Byte  4-5    (s16 LE)  accel_z  [milli-g]
+  Byte  6-7    (s16 LE)  gyro_x   [milli-degree/sec]
+  Byte  8-9    (s16 LE)  gyro_y   [milli-degree/sec]
+  Byte 10-11   (s16 LE)  gyro_z   [milli-degree/sec]
+  Byte 12-23   (u8 × 12) Reserved / Padding
+
+STREAMING PACKET FORMAT:
+────────────────────────
+  Byte  0-1    (u16 LE)  sequence_number  [increments per packet]
+  Byte  2-3    (u16 LE)  reserved         [0x0000]
+  Byte  4-N    (variable) IMU samples     [N × 24 bytes]
+
+  Total: 4 + (N × 24) bytes per packet (typical: 4 + 240 = 244 bytes)
+
+STATS CHARACTERISTIC FORMAT (20 bytes):
+───────────────────────────────────────
+  Byte  0-1    (u16 LE)  samples_stored
+  Byte  2-3    (u16 LE)  samples_dropped
+  Byte  4-7    (u32 LE)  total_captured
+  Byte  8-9    (u16 LE)  duration_sec
+  Byte 10-11   (u16 LE)  actual_rate_hz
+  Byte 12-13   (u16 LE)  buffer_capacity
+  Byte 14      (u8)      is_recording    [0/1]
+  Byte 15      (u8)      is_full         [0/1]
+
+STREAM STATUS CHARACTERISTIC FORMAT (8 bytes):
+───────────────────────────────────────────────
+  Byte  0-3    (u32 LE)  total_bytes     [total to send]
+  Byte  4-7    (u32 LE)  bytes_sent      [sent so far]
+
+================================================================================
+7. ERROR HANDLING
+================================================================================
+
+ERRORS & WARNINGS:
+──────────────────
+
+Errors are logged to the RTT console and (if configured) forwarded to the
+Error Characteristic (UUID ending in DEF5) for app display.
+
+COMMON ERRORS:
+
+  "No valid BLE connection for streaming"
+    Cause: CMD_SNAP_DUMP issued without BLE connection
+    Fix:   Ensure device is connected before streaming
+
+  "BLE FIFO stream start failed (X)"
+    Cause: Streaming thread failed to initialize
+    Fix:   Check memory, FIFO state, or retry
+
+  "IMU Test: Failed to read data (err -X)"
+    Cause: I2C timeout or IMU not responding
+    Fix:   Verify I2C pull-ups, I2C slave address (0x6A)
+
+  "FIFO initialization failed (err -X)"
+    Cause: Memory allocation or buffer setup issue
+    Fix:   Check heap size, CONFIG_HEAP_MEM_POOL_SIZE
+
+  "Snapshot initialization failed"
+    Cause: (Legacy) Flash or NVS subsystem issue
+    Fix:   Not applicable (snapshot system removed)
+
+WARNINGS:
+
+  "RESET_STEPS not allowed while recording"
+  "LOCATION change not allowed while recording"
+    These operations require STOP state
+    Fix:   Issue CMD_STOP first, then retry command
+
+  "Stats notify failed (err X)"
+  "Command state notify failed (err X)"
+    Cause: BLE MTU exhausted or disconnection mid-notify
+    Fix:   Automatic retry on next notification interval
+
+  "LOG_BACKEND_RTT truncated X bytes"
+    Cause: RTT buffer overflow (logging too fast)
+    Fix:   Increase CONFIG_LOG_BUFFER_SIZE or CONFIG_SEGGER_RTT_BUFFER_SIZE_UP
+
+LOG LEVELS:
+───────────
+  [inf]  = Informational (normal operation)
+  [wrn]  = Warning (recoverable issue)
+  [err]  = Error (operation failed, may need user action)
+  [dbg]  = Debug (development/diagnostics only)
+
+ERROR CHARACTERISTIC USAGE:
+──────────────────────────
+  - Only WARN and ERROR level logs are forwarded
+  - Device caches last error message (20 bytes max)
+  - On CCC enable, immediately sends cached message
+  - New errors sent as notifications (rate-limited 1 per 200ms)
+  - App can READ characteristic to get current last error
+  - Empty value = no errors since boot
+
+================================================================================
+APPENDIX A: SAMPLE WORKFLOW
+================================================================================
+
+Typical user session from app perspective:
+
+  1. App discovers device as "STINGRAY 307B"
+  2. App connects to device
+  3. App subscribes to:
+     - Command Characteristic (state feedback)
+     - Stats Characteristic (FIFO progress)
+     - Stream Characteristic (data packets)
+     - Stream Status Characteristic (progress %)
+     - Error Characteristic (logs)
+  4. App writes CMD_RUN (0x01)
+     → Device state notifies "1" (RUN)
+     → LED green
+  5. [User wears device for 1 minute]
+  6. App writes CMD_SNAP_DUMP (0x30)
+     → Device state notifies "3" (DUMPING)
+     → LED blue
+     → Streaming begins (Stream packets arrive every ~10ms)
+     → Status notifications show progress (0%, 10%, 20%, ... 100%)
+  7. Once 100%, final state notification: "1" (RUN)
+     → LED green
+     → Device ready for next recording
+  8. [Repeat steps 5-7 as desired]
+  9. App writes CMD_STOP (0x02)
+     → Device state notifies "0" (STOP)
+     → LED red
+  10. App disconnects
+
+Sample packet reception timeline:
+  ├─ 0ms    CMD_SNAP_DUMP written
+  ├─ 5ms    Stream packet #1 (10 samples)
+  ├─ 10ms   Status notification (100KB / 1000KB)
+  ├─ 15ms   Stream packet #2
+  ├─ 20ms   Stream packet #3
+  ├─ ...
+  ├─ 500ms  Status notification (200KB / 1000KB)
+  ├─ ...
+  └─ 1000ms Complete + State notification (RUN)
+
+================================================================================
+APPENDIX B: CONFIGURATION & LIMITS
+================================================================================
+
+HARDWARE LIMITS:
+  - Max BLE packet size (MTU): 247 bytes (typical)
+  - Max streaming chunk: ~243 bytes data + 4 header = 247
+  - FIFO capacity: 3000 samples = 72000 bytes (~70 KB)
+  - Max recording duration: 60 seconds @ 50 Hz
+  - Battery voltage range: 3.0–4.2 V (ADC mapped to 0–100%)
+
+TIMING:
+  - IMU sample rate: 100 Hz (internal), 50 Hz FIFO avg
+  - Streaming rate: ~1 packet per 10 ms (configurable)
+  - Stats notification: Every 1 second (while recording)
+  - Status notification: Every 500 ms (while streaming)
+  - Error cache: Updated on each WARN/ERR, notified immediately
+  - Error rate-limit: 1 notification per 200 ms
+
+BUFFER SIZES:
+  - FIFO max: 3000 samples × 24 bytes = 72 KB
+  - Log buffer: 4 KB (RTT)
+  - Stream output buffer: 24 bytes (per packet header/padding)
+  - Error cache: 21 bytes (null-terminated string)
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+For questions or updates, refer to the source code in:
+  /stingray/apps/xiao/src/
+    ├─ main.c              (initialization)
+    ├─ ble_command.c       (command service + state machine)
+    ├─ ble_fifo_stream.c   (streaming implementation)
+    ├─ imu_fifo.c          (FIFO buffer)
+    ├─ ble_log_backend.c   (error forwarding)
+    └─ [other BLE services]
+
+Last Updated: 13 December 2025
+Device: StingRay (XIAO BLE Sense)
+Firmware Version: Current Zephyr 4.3.0-rc1
