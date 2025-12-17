@@ -7,90 +7,210 @@
 
 // PeripheralSession.swift
 import CoreBluetooth
+import Combine
 
-class PeripheralSession {
+
+struct CharKey: Hashable {
+	let service: CBUUID
+	let characteristic: CBUUID
+
+	func hash(into hasher: inout Hasher) {
+		// Use stable string representations for hashing
+		hasher.combine(service.uuidString)
+		hasher.combine(characteristic.uuidString)
+	}
+
+	static func == (lhs: CharKey, rhs: CharKey) -> Bool {
+		lhs.service.uuidString == rhs.service.uuidString &&
+		lhs.characteristic.uuidString == rhs.characteristic.uuidString
+	}
+}
+
+
+
+struct PeripheralData {
+	var localName: String?
+	var batteryLevel: UInt8?
+	var commnad: UInt8?
+	// Add more fields as needed for other characteristic values
+}
+
+class PeripheralSession: ObservableObject {
+	
 	let peripheral: CBPeripheral
-	var characteristics: [CBUUID: CBCharacteristic]
+	
+	///Publiched Observable objects in the session
+	@Published var characteristics: [CharKey: CBCharacteristic] = [:]
+	@Published var data: PeripheralData
 
-	// UUIDs for Command Service and its characteristics
+	/// UUIDs for Command Service and its characteristics
 	static let commandServiceUUID = CBUUID(string: "12345679-1234-5678-1234-56789abcdef0")
 	static let commandCharUUID    = CBUUID(string: "12345679-1234-5678-1234-56789abcdef1")
 	static let statsCharUUID      = CBUUID(string: "12345679-1234-5678-1234-56789abcdef2")
 	static let locationCharUUID   = CBUUID(string: "12345679-1234-5678-1234-56789abcdef3")
 	static let snapshotCharUUID   = CBUUID(string: "12345679-1234-5678-1234-56789abcdef4")
 	static let errorCharUUID      = CBUUID(string: "12345679-1234-5678-1234-56789abcdef5")
+	
+	///UUIDs Fatigue Service and its characteristics
+	static let fatigueServiceUUID = CBUUID(string: "12345678-1234-5678-1234-56789abcdef0")
+	static let fatigueCharUUID    = CBUUID(string: "12345678-1234-5678-1234-56789abcdef1")
+	
+	///UUIDs Fifo Streaming Service
+	static let fifoServiceUUID 		= CBUUID(string: "12345680-1234-5678-1234-56789abcdef0")
+	static let fifoStreamCharUUID   = CBUUID(string: "12345680-1234-5678-1234-56789abcdef1")
+	static let fifoStatusCharUUID   = CBUUID(string: "12345680-1234-5678-1234-56789abcdef2")
+	
+	///UUIDs Steps Service and its characteristics
+	static let stepsServiceUUID = CBUUID(string: "1814") // Standard UUID for Running Speed and Cadence Service
+	static let stepsCharUUID    = CBUUID(string: "2A53") // Standard UUID for RSC Measurement Characteristic
+	
+	///UUIDs Battery Service and its characteristics
+	static let batteryServiceUUID = CBUUID(string: "180F") // Standard UUID for
+	static let batteryCharUUID    = CBUUID(string: "2A19") // Standard UUID for Battery Level Characteristic
+	
 
-	init(peripheral: CBPeripheral, characteristics: [CBUUID: CBCharacteristic]) {
+	init(peripheral: CBPeripheral, characteristics: [CharKey: CBCharacteristic], localName: String? = nil) {
 		self.peripheral = peripheral
 		self.characteristics = characteristics
+		self.data = PeripheralData(
+			localName: localName,
+			batteryLevel: nil,
+			commnad: nil,
+		)
 	}
 
 	// Write a command (e.g., CMD_RUN)
 	func writeCommand(_ value: UInt8) {
-		if let char = characteristics[Self.commandCharUUID] {
+		let key = CharKey(service: PeripheralSession.commandServiceUUID, characteristic: PeripheralSession.commandCharUUID)
+		if let char = characteristics[key] {
 			let data = Data([value])
 			peripheral.writeValue(data, for: char, type: .withResponse)
 		}
 	}
 
-	// Read device state
+	// Read command state
 	func readCommandState() {
-		if let char = characteristics[Self.commandCharUUID] {
+		let key = CharKey(service: PeripheralSession.commandServiceUUID, characteristic: PeripheralSession.commandCharUUID)
+		if let char = characteristics[key] {
 			peripheral.readValue(for: char)
 		}
 	}
 
 	// Subscribe to notifications for Command Characteristic
-	func subscribeCommandNotifications(_ enable: Bool) {
-		if let char = characteristics[Self.commandCharUUID] {
-			peripheral.setNotifyValue(enable, for: char)
-		}
-	}
+	//func subscribeCommandNotifications(_ enable: Bool) {
+	//	if let char = characteristics[Self.commandCharUUID] {
+	//		peripheral.setNotifyValue(enable, for: char)
+	//	}
+	//}
 
-	// Read stats
-	func readStats() {
-		if let char = characteristics[Self.statsCharUUID] {
-			peripheral.readValue(for: char)
-		}
-	}
+
 
 	// Subscribe to stats notifications
-	func subscribeStatsNotifications(_ enable: Bool) {
-		if let char = characteristics[Self.statsCharUUID] {
-			peripheral.setNotifyValue(enable, for: char)
-		}
-	}
+	//func subscribeStatsNotifications(_ enable: Bool) {
+	//	if let char = characteristics[Self.statsCharUUID] {
+	//		peripheral.setNotifyValue(enable, for: char)
+	//	}
+	//}
 
-	// ...repeat for other characteristics as needed
 }
 
 // In PeripheralSession.swift
-extension PeripheralSession: CustomStringConvertible {
-	var description: String {
+//extension PeripheralSession: CustomStringConvertible {
+//	var description: String {
 		//let charList = characteristics.keys.map { $0.uuidString }.joined(separator: ", ")
 		//return "PeripheralSession(peripheral: \(peripheral.identifier), characteristics: [\(charList)])"
 		//let uuidStr = peripheral.identifier.uuidString
 		//let last4 = String(uuidStr.suffix(4))
-		let charCount = characteristics.count
-		return "characteristics count: \(charCount))"
-	}
-}
+//		let charCount = characteristics.count
+//		return "characteristics count: \(charCount))"
+//	}
+//}
 
 extension PeripheralSession {
 	
-	func addCharacteristic(_ char: CBCharacteristic) {
-		characteristics[char.uuid] = char
-		if char.properties.contains(.notify) {
-			peripheral.setNotifyValue(true, for: char)
-			print("[BLE] Subscribed to notifications for characteristic: \(char.uuid)")
+	
+	static func serviceName(for uuid: CBUUID) -> String {
+		switch uuid {
+			case commandServiceUUID: return "Command Service"
+			case fatigueServiceUUID: return "Fatigue Service"
+			case fifoServiceUUID: return "Fifo Streaming Service"
+			case batteryServiceUUID: return "Battery Service"
+			case stepsServiceUUID: return "Steps Service"
+			// Add more cases as needed
+			default: return uuid.uuidString
+		}
+	}
+
+	static func characteristicName(for charUUID: CBUUID, in serviceUUID: CBUUID) -> String {
+		switch (serviceUUID, charUUID) {
+			
+		// Command Service
+		case (commandServiceUUID, commandCharUUID): return "Command"
+		case (commandServiceUUID, statsCharUUID): return "Stats"
+		case (commandServiceUUID, locationCharUUID): return "Location"
+		case (commandServiceUUID, snapshotCharUUID): return "Snapshot"
+		case (commandServiceUUID, errorCharUUID): return "Error"
+			
+		// Fatigue Service
+		case (fatigueServiceUUID, fatigueCharUUID): return "Fatigue"
+		
+		// Fifo Streaming Service
+		case (fifoServiceUUID, fifoStreamCharUUID): return "Fifo Stream"
+		case (fifoServiceUUID, fifoStatusCharUUID): return "Fifo Status"
+			
+		// Steps Service
+		case (stepsServiceUUID, stepsCharUUID): return "Steps"
+			
+		// Battery Service
+		case (batteryServiceUUID, batteryCharUUID): return "Battery Level"
+			
+		// Add more (service, char) pairs as needed
+		default: return charUUID.uuidString
 		}
 	}
 	
-	func handleNotification(for characteristic: CBCharacteristic, value: Data) {
-			// Process the notification data as needed
-			print("[PeripheralSession] Notification for \(characteristic.uuid): \(value as NSData)")
-			// Add your custom logic here
+	func addCharacteristic(_ char: CBCharacteristic, from peripheral: CBPeripheral) {
+		let serviceText = char.service.map { Self.serviceName(for: $0.uuid) } ?? "Unknown Service"
+		let charText = Self.characteristicName(for: char.uuid, in: char.service?.uuid ?? CBUUID())
+		
+		let key = CharKey(service: char.service?.uuid ?? CBUUID(), characteristic: char.uuid)
+		characteristics[key] = char
+		if char.properties.contains(.notify) {
+			peripheral.setNotifyValue(true, for: char)
+			print("[PeripheralSession] Subscribed to notifications for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
 		}
+		
+		if char.properties.contains(.read) {
+			peripheral.readValue(for: char)
+			//print("[PeripheralSession] Reading initial value for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
+		}
+	}
+	
+	func handleNotification(from peripheral: CBPeripheral, for characteristic: CBCharacteristic, value: Data) {
+		let serviceText = characteristic.service.map { Self.serviceName(for: $0.uuid) } ?? "Unknown Service"
+		let charText = Self.characteristicName(for: characteristic.uuid, in: characteristic.service?.uuid ?? CBUUID())
+		
+		if 	characteristic.service?.uuid != Self.batteryServiceUUID && characteristic.service?.uuid != Self.fatigueServiceUUID && characteristic.service?.uuid != Self.stepsServiceUUID {
+			print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
+		}
+		
+		switch (characteristic.service?.uuid, characteristic.uuid) {
+			
+			/// Command Service
+			case (PeripheralSession.commandServiceUUID, PeripheralSession.commandCharUUID):
+				data.commnad = value.first
+			
+			///Battery Service
+			case (PeripheralSession.batteryServiceUUID, PeripheralSession.batteryCharUUID):
+				data.batteryLevel = value.first
+			
+			default:
+				return
+		}
+		
+		//
+		// Custom logic here
+	}
 	
 }
 

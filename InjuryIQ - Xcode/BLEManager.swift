@@ -255,17 +255,18 @@ extension BLEManager: CBCentralManagerDelegate {
         }
     }
 
-    func centralManager(
-        _ central: CBCentralManager,
-        didDiscover peripheral: CBPeripheral,
-        advertisementData: [String: Any],
-        rssi RSSI: NSNumber
-    ) {
-        let name =
-            peripheral.name
-            ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
-            ?? "Unknown"
-        print("[BLE] Discovered: \(name) - RSSI: \(RSSI)")
+    func centralManager( _ central: CBCentralManager,  didDiscover peripheral: CBPeripheral, advertisementData: [String: Any],  rssi RSSI: NSNumber ) {
+		let name = peripheral.name ?? "Unknown"
+		let localName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+		print("[BLE] Discovered: \(localName ?? name) - RSSI: \(RSSI)")
+		
+		///Create a PeripheralSession Obhect for STINGRAY devices
+		if name == "STINGRAY" {
+			let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: localName)
+			sessionsByPeripheral[peripheral.identifier] = session
+		}
+		
+		///Update a lits of Discovered Devices
         let dp = DiscoveredPeripheral(
             id: peripheral.identifier,
             name: name,
@@ -337,7 +338,7 @@ extension BLEManager: CBPeripheralDelegate {
             return
         }
         guard let svcs = peripheral.services else { return }
-        print("[BLE] Discovered \(svcs.count) services")
+        //print("[BLE] Discovered \(svcs.count) services")
         services = svcs
         svcs.forEach { peripheral.discoverCharacteristics(nil, for: $0) }
     }
@@ -347,16 +348,19 @@ extension BLEManager: CBPeripheralDelegate {
 				lastError = error.localizedDescription
 				print("[BLE] Error discovering characteristics: \(error)")
 				return
-			}
-			let chars = service.characteristics ?? []
-			print("[BLE] Discovered \(chars.count) characteristics for service")
-			characteristicsByService[service] = chars
+		}
+		let chars = service.characteristics ?? []
+		//print("[BLE] Discovered \(chars.count) characteristics for service")
+		characteristicsByService[service] = chars
 
-			var session = sessionsByPeripheral[peripheral.identifier] ?? PeripheralSession(peripheral: peripheral, characteristics: [:])
-			for char in chars {
-				session.addCharacteristic(char)
-			}
-			sessionsByPeripheral[peripheral.identifier] = session
+			//var session = sessionsByPeripheral[peripheral.identifier] ?? PeripheralSession(peripheral: peripheral, characteristics: [:])
+		
+		///Update PeripheralSession with discovered characteristics
+		let session = sessionsByPeripheral[peripheral.identifier] ?? PeripheralSession(peripheral: peripheral, characteristics: [:], localName: nil)
+		for char in chars {
+			session.addCharacteristic(char, from: peripheral)
+		}
+		sessionsByPeripheral[peripheral.identifier] = session
 		
     }
 	
@@ -371,8 +375,8 @@ extension BLEManager: CBPeripheralDelegate {
 			return
 		}
 		// Pass the value to the PeripheralSession
-		if var session = sessionsByPeripheral[peripheral.identifier] {
-			session.handleNotification(for: characteristic, value: value)
+		if let session = sessionsByPeripheral[peripheral.identifier] {
+			session.handleNotification(from: peripheral, for: characteristic, value: value)
 			sessionsByPeripheral[peripheral.identifier] = session
 		}
 	}
