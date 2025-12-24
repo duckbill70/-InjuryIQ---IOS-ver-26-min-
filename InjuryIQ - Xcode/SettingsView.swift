@@ -12,10 +12,7 @@ struct SettingsView: View {
 		Form {
 			Section(header: Text("Bluetooth")) {
 				Toggle("Auto-scan on launch", isOn: $ble.autoScanOnLaunch)
-				Toggle(
-					"Filter duplicate discoveries",
-					isOn: $ble.filterDuplicates
-				)
+				Toggle("Filter duplicate discoveries", isOn: $ble.filterDuplicates)
 			}
 
 			Section(header: Text("Known Devices (\(knownDevices.count))")) {
@@ -113,13 +110,15 @@ struct SettingsView: View {
 				print("[UI] Device not discovered, starting scan: \(kd.name)")
 				ble.startScan()
 
-				DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-					if let discovered = ble.discovered.first(where: { $0.id == kd.uuid }) {
-						ble.connect(discovered)
-					} else {
-						print("[UI] Device still not found after scan: \(kd.name)")
+				DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+					DispatchQueue.main.async {
+						if let discovered = ble.discovered.first(where: { $0.id == kd.uuid }) {
+							ble.connect(discovered)
+						} else {
+							print("[UI] Device still not found after scan: \(kd.name)")
+						}
+						ble.stopScan()
 					}
-					ble.stopScan()
 				}
 			}
 		}

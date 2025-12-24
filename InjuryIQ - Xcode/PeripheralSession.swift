@@ -8,6 +8,7 @@
 // PeripheralSession.swift
 import CoreBluetooth
 import Combine
+import SwiftUI
 
 
 struct CharKey: Hashable {
@@ -26,13 +27,58 @@ struct CharKey: Hashable {
 	}
 }
 
-
+enum DeviceState: String {
+	case stopped, running, unknown
+}
 
 struct PeripheralData {
-	var localName: String?
-	var batteryLevel: UInt8?
-	var commnad: UInt8?
+	
+	var localName		: String?
+	var batteryLevel	: UInt8?
+	var commnad			: UInt8?
+	var location		: UInt8?
 	// Add more fields as needed for other characteristic values
+	
+	var errorCode		: UInt8?
+	var stats			: UInt16?
+	var snapshotCount	: UInt8?
+	
+	var fatigue			: UInt8?
+	
+	var commandState: DeviceState {
+		switch commnad {
+			case 0x00: return .stopped
+			case 0x01: return .running
+			default: return .unknown
+		}
+	}
+
+	var batteryPercent: Int? {
+		guard let b = batteryLevel else { return nil }
+		return Int(min(100, max(0, b)))
+	}
+
+	var fifoPercent: Int? {
+		guard let f = stats else { return nil }
+		return Int(min(100, max(0, f)))
+	}
+	
+	var fatiguePercent: Int? {
+		guard let f = fatigue else { return nil }
+		return Int(min(100, max(0, f)))
+	}
+	
+}
+
+extension PeripheralData {
+	var locationColor: Color {
+		switch location {
+		case nil: return .clear      // none
+		case 0x00: return .red       // 0x00
+		case 0x01: return .green     // 0x01
+		default: return .gray        // unexpected values
+		}
+	}
 }
 
 class PeripheralSession: ObservableObject {
@@ -76,6 +122,7 @@ class PeripheralSession: ObservableObject {
 			localName: localName,
 			batteryLevel: nil,
 			commnad: nil,
+			location: nil,
 		)
 	}
 
@@ -126,8 +173,13 @@ class PeripheralSession: ObservableObject {
 //	}
 //}
 
+extension PeripheralSession: Identifiable {
+	var id: UUID {
+		peripheral.identifier
+	}
+}
+
 extension PeripheralSession {
-	
 	
 	static func serviceName(for uuid: CBUUID) -> String {
 		switch uuid {
@@ -203,6 +255,31 @@ extension PeripheralSession {
 			///Battery Service
 			case (PeripheralSession.batteryServiceUUID, PeripheralSession.batteryCharUUID):
 				data.batteryLevel = value.first
+			
+			///Fa§tigue Service
+			case (PeripheralSession.fatigueServiceUUID, PeripheralSession.fatigueCharUUID):
+				data.fatigue = value.first
+			
+			///Location Characteristic
+			case (PeripheralSession.commandServiceUUID, PeripheralSession.locationCharUUID):
+				data.location = value.first
+			
+			///Error Characteristic
+			case (PeripheralSession.commandServiceUUID, PeripheralSession.errorCharUUID):
+				data.errorCode = value.first
+			
+			///New: snapshot count (assume 2-byte little-endian)
+			case (Self.commandServiceUUID, Self.snapshotCharUUID):
+				data.snapshotCount = value.first
+
+			/// New: FIFO fill (assume 1 byte 0...100)
+			case (Self.fifoServiceUUID, Self.fifoStatusCharUUID):
+				if value.count >= 2 {
+					let lo = UInt16(value[0])
+					let hi = UInt16(value[1]) << 8
+					data.stats = hi | lo
+				}
+				
 			
 			default:
 				return

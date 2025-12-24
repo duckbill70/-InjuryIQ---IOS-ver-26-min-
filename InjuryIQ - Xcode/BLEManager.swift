@@ -261,10 +261,10 @@ extension BLEManager: CBCentralManagerDelegate {
 		print("[BLE] Discovered: \(localName ?? name) - RSSI: \(RSSI)")
 		
 		///Create a PeripheralSession Obhect for STINGRAY devices
-		if name == "STINGRAY" {
-			let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: localName)
-			sessionsByPeripheral[peripheral.identifier] = session
-		}
+		//if name == "STINGRAY" {
+		//	let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: localName)
+		//	sessionsByPeripheral[peripheral.identifier] = session
+		//}
 		
 		///Update a lits of Discovered Devices
         let dp = DiscoveredPeripheral(
@@ -293,6 +293,13 @@ extension BLEManager: CBCentralManagerDelegate {
 		connectedInfo.append(ConnectedInfo(uuid: uuid, name: name))
 		
 		lastConnectedInfo = ConnectedInfo(uuid: uuid, name: name)
+		
+		// Create session on connection
+		if sessionsByPeripheral[uuid] == nil {
+			let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: name)
+			sessionsByPeripheral[uuid] = session
+		}
+	
         
         print("[BLE] Connected to: \(name)")
 
@@ -350,13 +357,16 @@ extension BLEManager: CBPeripheralDelegate {
 				return
 		}
 		let chars = service.characteristics ?? []
-		//print("[BLE] Discovered \(chars.count) characteristics for service")
 		characteristicsByService[service] = chars
 
-			//var session = sessionsByPeripheral[peripheral.identifier] ?? PeripheralSession(peripheral: peripheral, characteristics: [:])
 		
 		///Update PeripheralSession with discovered characteristics
-		let session = sessionsByPeripheral[peripheral.identifier] ?? PeripheralSession(peripheral: peripheral, characteristics: [:], localName: nil)
+		// Use existing session - don't create new one
+		guard var session = sessionsByPeripheral[peripheral.identifier] else {
+			print("[BLE] Warning: No session found for peripheral \(peripheral.identifier)")
+			return
+		}
+		
 		for char in chars {
 			session.addCharacteristic(char, from: peripheral)
 		}

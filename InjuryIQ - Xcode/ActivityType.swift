@@ -55,6 +55,17 @@ struct ActivityButton: Identifiable {
 	]
 }
 
+extension ActivityType {
+	func toSessionActivity() -> SessionActivity {
+		switch self {
+		case .running: return .run
+		case .hiking: return .hike
+		case .racket: return .racket
+		case .cycling: return .cycle
+		}
+	}
+}
+
 @Observable
 class Sports {
 	var selectedActivity: ActivityType {

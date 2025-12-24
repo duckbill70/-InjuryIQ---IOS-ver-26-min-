@@ -59,8 +59,56 @@ struct ContentView: View {
 					}
 					.padding(.horizontal)
 					.padding(.top)
+					
+					Spacer()
+					
+					let sessions = Array(ble.sessionsByPeripheral.values)
+					
+					let fatigueLeft = sessions.indices.contains(0) ? sessions[0].data.fatiguePercent.map(Double.init) : nil
+					let fatigueRight = sessions.indices.contains(1) ? sessions[1].data.fatiguePercent.map(Double.init) : nil
+
+					SessionStatusIndicator(
+						leftFatiguePct: fatigueLeft,
+						rightFatiguePct: fatigueRight,
+						leftConnected: sessions.indices.contains(0),
+						rightConnected: sessions.indices.contains(1),
+						duration: 0,
+						sessionState: .idle,
+						activity: sports.selectedActivity.toSessionActivity(),
+						subtitle: nil
+					)
+					.frame(width: 320)
+					.padding()
+					
+					//VStack() {
+						
+						//HStack() {
+						//	Text("Peripheral Sessions (\(ble.sessionsByPeripheral.count))")
+						//		.font(.headline)
+						//		.foregroundColor(.secondary)
+						
+						//let sessions = Array(ble.sessionsByPeripheral.values)
+						//HStack() {
+						//
+						//	ForEach(sessions) { session in
+						//		DeviceCardView(session: session)
+						//	}
+							
+						//}
+					//}
+					//.padding(.vertical)
+					//.frame(maxWidth: .infinity, alignment: .leading)
+					//.padding()
+					//.background(Color(.systemGray6))
+					//.cornerRadius(10)
+					//.overlay(
+					//	RoundedRectangle(cornerRadius: 10)
+					//		.stroke(Color.gray.opacity(0.3), lineWidth: 1)
+					//)
+					//.padding(.horizontal)
 							
 					Spacer()
+					
 				}
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
@@ -89,6 +137,30 @@ struct ContentView: View {
 			}
 		}
 
+	}
+	
+	private func deviceTable() -> some View {
+		
+		return ScrollView(.horizontal, showsIndicators: false) {
+			
+			HStack(spacing: 12) {
+								
+			   ForEach(Array(ble.sessionsByPeripheral.values), id: \.peripheral.identifier) { session in
+				   VStack {
+					   
+					   Text(session.data.localName ?? "Unknown")
+						   .font(.caption)
+						   .lineLimit(1)
+				   }
+				   .frame(width: 80)
+				   .padding(8)
+				   .background(Color(.systemBlue))
+				   .foregroundColor(.white)
+				   .cornerRadius(10)
+			   }
+		   }
+		   .padding(.vertical, 8)
+		}
 	}
 
 	private func addItem() {
