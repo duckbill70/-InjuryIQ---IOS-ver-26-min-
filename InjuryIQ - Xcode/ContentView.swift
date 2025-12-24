@@ -79,35 +79,46 @@ struct ContentView: View {
 					)
 					.frame(width: 320)
 					.padding()
+							
+					let statusLeft = sessions.indices.contains(0) ? sessions[0].data.commandState : .unknown
 					
-					//VStack() {
-						
-						//HStack() {
-						//	Text("Peripheral Sessions (\(ble.sessionsByPeripheral.count))")
-						//		.font(.headline)
-						//		.foregroundColor(.secondary)
-						
-						//let sessions = Array(ble.sessionsByPeripheral.values)
-						//HStack() {
-						//
-						//	ForEach(sessions) { session in
-						//		DeviceCardView(session: session)
-						//	}
-							
-						//}
-					//}
-					//.padding(.vertical)
-					//.frame(maxWidth: .infinity, alignment: .leading)
-					//.padding()
-					//.background(Color(.systemGray6))
-					//.cornerRadius(10)
-					//.overlay(
-					//	RoundedRectangle(cornerRadius: 10)
-					//		.stroke(Color.gray.opacity(0.3), lineWidth: 1)
-					//)
-					//.padding(.horizontal)
-							
+					let statusRight = sessions.indices.contains(1) ? sessions[1].data.commandState : .unknown
+					
+					let locationLeft = sessions.indices.contains(0)
+					? (sessions[0].data.location.flatMap { DeviceSide(rawValue: Int($0)) } ?? .unknown) : .unknown
+					
+					let locationRight = sessions.indices.contains(1)
+					? (sessions[1].data.location.flatMap { DeviceSide(rawValue: Int($0)) } ?? .unknown) : .unknown
+					
+					let batteryLeft = sessions.indices.contains(0) ? sessions[0].data.batteryPercent : 0
+					
+					let batteryRight = sessions.indices.contains(1) ? sessions[1].data.batteryPercent : 0
+					
+					let a = BLEDevice(
+						name: "Device A",
+						status: DeviceStatus(from: statusLeft),
+						batteryPercent: batteryLeft ?? 0,
+						rssi: -58,
+						hz: 0,
+						side: locationLeft
+				   )
+				   let b = BLEDevice(
+					   name: "Device B",
+					   status: DeviceStatus(from: statusRight),
+					   batteryPercent: batteryRight ?? 0,
+					   rssi: -86,
+					   hz: 0,
+					   side: locationRight
+				   )
+				   
+				   Group {
+					   HStack(spacing: 16) {
+						   DeviceCard(device: a)
+						   DeviceCard(device: b)
+					}
+				   .padding()
 					Spacer()
+		   }
 					
 				}
 				.frame(maxWidth: .infinity, maxHeight: .infinity)

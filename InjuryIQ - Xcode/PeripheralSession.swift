@@ -31,11 +31,19 @@ enum DeviceState: String {
 	case stopped, running, unknown
 }
 
+enum CommandState: UInt8 {
+	case stopped = 0x00
+	case running = 0x01
+	case dumping = 0x03
+	case showingLocation = 0x04
+	case unknown = 0xFF
+}
+
 struct PeripheralData {
 	
 	var localName		: String?
 	var batteryLevel	: UInt8?
-	var commnad			: UInt8?
+	var command			: CommandState?
 	var location		: UInt8?
 	// Add more fields as needed for other characteristic values
 	
@@ -45,12 +53,8 @@ struct PeripheralData {
 	
 	var fatigue			: UInt8?
 	
-	var commandState: DeviceState {
-		switch commnad {
-			case 0x00: return .stopped
-			case 0x01: return .running
-			default: return .unknown
-		}
+	var commandState: CommandState {
+		return command ?? .unknown
 	}
 
 	var batteryPercent: Int? {
@@ -121,7 +125,7 @@ class PeripheralSession: ObservableObject {
 		self.data = PeripheralData(
 			localName: localName,
 			batteryLevel: nil,
-			commnad: nil,
+			command: nil,
 			location: nil,
 		)
 	}
@@ -250,7 +254,7 @@ extension PeripheralSession {
 			
 			/// Command Service
 			case (PeripheralSession.commandServiceUUID, PeripheralSession.commandCharUUID):
-				data.commnad = value.first
+				data.command = CommandState(rawValue: value.first ?? 0) ?? .unknown
 			
 			///Battery Service
 			case (PeripheralSession.batteryServiceUUID, PeripheralSession.batteryCharUUID):
@@ -290,5 +294,3 @@ extension PeripheralSession {
 	}
 	
 }
-
-
