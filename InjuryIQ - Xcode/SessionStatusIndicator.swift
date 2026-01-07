@@ -9,39 +9,20 @@ import SwiftUI
 
 // MARK: - Public types
 
-public enum SessionState: String, CaseIterable {
-	case idle = "READY"
-	case running = "RUNNING"
-	case paused = "PAUSED"
-	case stopped = "STOPPED"
+//public struct SessionActivity: Hashable {
+//	public let title: String
+//	public let systemImage: String
 
-	var accent: Color {
-		switch self {
-		case .running: return .green
-		case .paused:  return .orange
-		case .stopped: return .gray
-		case .idle:    return .blue
-		}
-	}
+//	public init(title: String, systemImage: String) {
+//		self.title = title
+//		self.systemImage = systemImage
+//	}
 
-	var isAnimated: Bool { self == .running }
-	var isDimmed: Bool { self == .stopped || self == .idle }
-}
-
-public struct SessionActivity: Hashable {
-	public let title: String
-	public let systemImage: String
-
-	public init(title: String, systemImage: String) {
-		self.title = title
-		self.systemImage = systemImage
-	}
-
-	public static let hike		= SessionActivity(title: "Hike", systemImage: "figure.hiking")
-	public static let run		= SessionActivity(title: "Run", systemImage: "figure.run")
-	public static let cycle		= SessionActivity(title: "Cycling", systemImage: "figure.outdoor.cycle")
-	public static let racket	= SessionActivity(title: "Racket", systemImage: "figure.tennis")
-}
+//	public static let hike		= SessionActivity(title: "Hike", systemImage: "figure.hiking")
+//	public static let running	= SessionActivity(title: "Run", systemImage: "figure.run")
+//	public static let cycling	= SessionActivity(title: "Cycling", systemImage: "figure.outdoor.cycle")
+//	public static let racket	= SessionActivity(title: "Racket", systemImage: "figure.tennis")
+//}
 
 // MARK: - SessionStatusIndicator (Dual fatigue halves)
 
@@ -55,8 +36,10 @@ public struct SessionStatusIndicator: View {
 	public let rightConnected: Bool
 
 	public let duration: TimeInterval
+	public let distance: Double
+	public let speed: Double
 	public let sessionState: SessionState
-	public let activity: SessionActivity
+	public let activity: ActivityType
 
 	/// Optional label under duration (e.g. "Mild Fatigue")
 	public let subtitle: String?
@@ -77,8 +60,10 @@ public struct SessionStatusIndicator: View {
 		leftConnected: Bool,
 		rightConnected: Bool,
 		duration: TimeInterval,
+		distance: Double,
+		speed: Double,
 		sessionState: SessionState,
-		activity: SessionActivity,
+		activity: ActivityType,
 		subtitle: String? = nil
 	) {
 		self.leftFatiguePct = leftFatiguePct
@@ -86,6 +71,8 @@ public struct SessionStatusIndicator: View {
 		self.leftConnected = leftConnected
 		self.rightConnected = rightConnected
 		self.duration = duration
+		self.distance = distance
+		self.speed = speed
 		self.sessionState = sessionState
 		self.activity = activity
 		self.subtitle = subtitle
@@ -166,7 +153,7 @@ public struct SessionStatusIndicator: View {
 				if sessionState.isAnimated {
 					Circle()
 						.strokeBorder(sessionState.accent.opacity(breathe ? 0.10 : 0.22), lineWidth: 10)
-						.scaleEffect(breathe ? 1.035 : 0.985)
+						.scaleEffect(breathe ? 1.08 : 0.985)
 						.padding(ringInset + ringLineWidth / 2 - 6)
 						.animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: breathe)
 				}
@@ -185,7 +172,7 @@ public struct SessionStatusIndicator: View {
 					ZStack {
 						Circle()
 							.fill(sessionState.accent.opacity(overallDim ? 0.10 : 0.16))
-						Image(systemName: activity.systemImage)
+						Image(systemName: activity.icon)
 							.font(.system(size: 24, weight: .semibold, design: .rounded))
 							.foregroundStyle(overallDim ? .secondary : sessionState.accent)
 					}
@@ -201,7 +188,21 @@ public struct SessionStatusIndicator: View {
 						.font(.system(size: 40, weight: .bold, design: .rounded))
 						.minimumScaleFactor(0.7)
 						.foregroundStyle(overallDim ? .secondary : .primary)
-
+					
+					HStack(){
+						//Text(String(format: "%.2km", distance))
+						Text(String(format: "%dkm", Int(distance)))
+							.frame(width: 70, alignment: .trailing)
+						//Text( speed > 0 ? String(format: "%.2fkmph", speed) : "-kmph")
+						Text(speed > 0 ? String(format: "%dkmph", Int(speed)) : "-- kmph")
+							.frame(width: 80, alignment: .leading)
+					}
+					.font(.system(size: 16, weight: .bold, design: .rounded))
+					.minimumScaleFactor(0.7)
+					.foregroundStyle(overallDim ? .secondary : .primary)
+					.opacity(0.7)
+					
+					
 					if let subtitle {
 						Divider()
 							.frame(maxWidth: 170)
@@ -272,7 +273,7 @@ public struct SessionStatusIndicator: View {
 	private var accessibilityText: String {
 		let l = leftShowsSignal ? "\(Int(round(leftProgress * 100))) percent" : "not available"
 		let r = rightShowsSignal ? "\(Int(round(rightProgress * 100))) percent" : "not available"
-		return "\(activity.title). \(sessionState.rawValue). Duration \(formatDuration(duration)). Left fatigue \(l). Right fatigue \(r)."
+		return "\(activity.descriptor). \(sessionState.rawValue). Duration \(formatDuration(duration)). Left fatigue \(l). Right fatigue \(r)."
 	}
 
 	// MARK: - Animation control
@@ -430,8 +431,10 @@ struct HalfProgressArcShape: Shape {
 			leftConnected: true,
 			rightConnected: true,
 			duration: 42 * 60 + 30,
+			distance: 2.5,
+			speed: 0.7,
 			sessionState: .running,
-			activity: .hike,
+			activity: .hiking,
 			subtitle: "Mild Fatigue"
 		)
 		.frame(width: 320)
@@ -453,8 +456,10 @@ struct HalfProgressArcShape: Shape {
 		leftConnected: true,
 		rightConnected: false,
 		duration: 18 * 60 + 12,
+		distance: 100,
+		speed: 99,
 		sessionState: .paused,
-		activity: .run,
+		activity: .running,
 		subtitle: "Normal"
 	)
 	.frame(width: 320)
@@ -469,8 +474,10 @@ struct HalfProgressArcShape: Shape {
 		leftConnected: false,
 		rightConnected: false,
 		duration: 0,
+		distance: 0.5,
+		speed: 4.8,
 		sessionState: .idle,
-		activity: .hike,
+		activity: .hiking,
 		subtitle: nil
 	)
 	.frame(width: 320)
@@ -485,8 +492,10 @@ struct HalfProgressArcShape: Shape {
 		leftConnected: true,
 		rightConnected: true, // connected but no value => placeholder (per your rule)
 		duration: 65 * 60 + 4,
+		distance: 7.8,
+		speed: 4.8,
 		sessionState: .stopped,
-		activity: .hike,
+		activity: .hiking,
 		subtitle: "High Fatigue"
 	)
 	.frame(width: 320)

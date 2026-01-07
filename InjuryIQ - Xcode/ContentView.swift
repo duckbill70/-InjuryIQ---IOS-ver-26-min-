@@ -13,118 +13,106 @@ struct ContentView: View {
 	@Environment(\.modelContext) private var modelContext
 	@EnvironmentObject private var ble: BLEManager
 	@Query private var items: [Item]
-	//@AppStorage("selectedActivity") private var selectedActivity: ActivityType = .running
 	@Bindable var sports: Sports
-	
+	@Environment(Session.self) private var session
+	@StateObject private var mlObject = MLTrainingObject(type: .running)
+
 	var body: some View {
 		TabView {
-			// Home tab renders inline content here
 			NavigationStack {
 				VStack(spacing: 16) {
-					//Text("Welcome to InjuryIQ")
-					//	.font(.title2)
-					//	.fontWeight(.semibold)
-					//Text("This is the Home screen.")
-					//	.foregroundColor(.secondary)
-
-					HStack(spacing: 12) {
-						
-						//Activity Buttons
-						ForEach(ActivityButton.activities) { activity in
-							Button(action: {
-								///Button Action
-								sports.selectedActivity = activity.type
-							}) {
-								VStack {
-									Image(systemName: activity.icon)
-										.font(.title2)
-									Text(activity.name)
-										.font(.caption)
-								}
-								.frame(maxWidth: .infinity)
-								.padding()
-								.background(
-									sports.selectedActivity == activity.type
-									? activity.selectedColor
-									: activity.unselectedColor
-								)
-								.foregroundColor(
-									sports.selectedActivity == activity.type
-									? .white
-									: .primary
-								)
-								.cornerRadius(10)
-							}
-						}
-					}
-					.padding(.horizontal)
-					.padding(.top)
+					
+					activityButtons
+						.padding(.horizontal)
+						.padding(.top)
 					
 					Spacer()
 					
 					let sessions = Array(ble.sessionsByPeripheral.values)
-					
-					let fatigueLeft = sessions.indices.contains(0) ? sessions[0].data.fatiguePercent.map(Double.init) : nil
-					let fatigueRight = sessions.indices.contains(1) ? sessions[1].data.fatiguePercent.map(Double.init) : nil
+					let leftSession = sessions[safe: 0]
+					let rightSession = sessions[safe: 1]
 
 					SessionStatusIndicator(
-						leftFatiguePct: fatigueLeft,
-						rightFatiguePct: fatigueRight,
+						leftFatiguePct: leftSession?.data.fatiguePercent
+							.map(Double.init),
+						rightFatiguePct: rightSession?.data.fatiguePercent
+							.map(Double.init),
 						leftConnected: sessions.indices.contains(0),
 						rightConnected: sessions.indices.contains(1),
-						duration: 0,
-						sessionState: .idle,
-						activity: sports.selectedActivity.toSessionActivity(),
+						duration: session.duration,
+						distance: session.locationManager.totalDistance / 1000, // for kilometers,
+						speed: session.currentSpeedKmph,
+						sessionState: session.state,
+						activity: sports.selectedActivity,
 						subtitle: nil
 					)
 					.frame(width: 320)
 					.padding()
-							
-					let statusLeft = sessions.indices.contains(0) ? sessions[0].data.commandState : .unknown
+
+					ZStack {
+						HStack {
+							Spacer()
+							MLTrainingStatusButton(
+								sports: sports,
+								mlObject: mlObject
+							)
+							.padding(.horizontal)
+						}
+						SessionControlButton(
+							selectedActivity: sports.selectedActivity.rawValue
+						)
+						.padding(.horizontal)
+					}
 					
-					let statusRight = sessions.indices.contains(1) ? sessions[1].data.commandState : .unknown
-					
-					let locationLeft = sessions.indices.contains(0)
-					? (sessions[0].data.location.flatMap { DeviceSide(rawValue: Int($0)) } ?? .unknown) : .unknown
-					
-					let locationRight = sessions.indices.contains(1)
-					? (sessions[1].data.location.flatMap { DeviceSide(rawValue: Int($0)) } ?? .unknown) : .unknown
-					
-					let batteryLeft = sessions.indices.contains(0) ? sessions[0].data.batteryPercent : 0
-					
-					let batteryRight = sessions.indices.contains(1) ? sessions[1].data.batteryPercent : 0
+					Spacer()
 					
 					let a = BLEDevice(
-						name: "Device A",
-						status: DeviceStatus(from: statusLeft),
-						batteryPercent: batteryLeft ?? 0,
+						name: leftSession?.data.localName ?? "StingRay A???",
+						status: DeviceStatus(
+							from: leftSession?.data.commandState ?? .unknown
+						),
+						batteryPercent: leftSession?.data.batteryPercent ?? 0,
 						rssi: -58,
 						hz: 0,
-						side: locationLeft
-				   )
-				   let b = BLEDevice(
-					   name: "Device B",
-					   status: DeviceStatus(from: statusRight),
-					   batteryPercent: batteryRight ?? 0,
-					   rssi: -86,
-					   hz: 0,
-					   side: locationRight
-				   )
+						side: leftSession?.data.location
+							.flatMap { DeviceSide(rawValue: Int($0))
+							} ?? .unknown
+					)
+					
+					let b = BLEDevice(
+						name: rightSession?.data.localName ?? "StingRay B???",
+						status: DeviceStatus(
+							from: rightSession?.data.commandState ?? .unknown
+						),
+						batteryPercent: rightSession?.data.batteryPercent ?? 0,
+						rssi: -86,
+						hz: 0,
+						side: rightSession?.data.location
+							.flatMap { DeviceSide(rawValue: Int($0))
+							} ?? .unknown
+					)
 				   
-				   Group {
-					   HStack(spacing: 16) {
-						   DeviceCard(device: a)
-						   DeviceCard(device: b)
+					Group {
+						HStack(spacing: 16) {
+							DeviceCard(device: a)
+							DeviceCard(device: b)
+						}
+						.padding()
+
 					}
-				   .padding()
-					Spacer()
-		   }
 					
 				}
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 			.toolbar(.hidden, for: .navigationBar)
 			.tabItem { Label("Home", systemImage: "house") }
+			
+			// AI tab
+			//NavigationStack {
+			//	AITrainingView(sports: 	sports)
+			//}
+			//.toolbar(.hidden, for: .navigationBar)
+			//.tabItem { Label("AI", systemImage: "atom") }
 
 			// Explore tab
 			NavigationStack {
@@ -146,8 +134,54 @@ struct ContentView: View {
 				ble.attach(modelContext: modelContext)
 				print("[ContentView] Attached BLE to view modelContext")
 			}
+			session.attach(modelContext: modelContext)
+			BLEManager.shared.attachSession(session)
+			session.locationManager.requestAuthorization()
+			
+		}
+		.onChange(of: sports.selectedActivity) { _, newActivity in
+			session.type = newActivity
+			if mlObject.type != newActivity {
+				if let loaded = try? MLTrainingObject.load(type: newActivity) {
+					mlObject.update(from: loaded)
+				} else {
+					mlObject.update(from: MLTrainingObject(type: newActivity))
+				}
+			}
 		}
 
+	}
+	
+	private var activityButtons: some View {
+		HStack(spacing: 12) {
+			ForEach(ActivityButton.activities) { activity in
+				Button(
+					action: { sports.selectedActivity = activity.type }
+				) {
+					VStack {
+						Image(systemName: activity.icon)
+							.font(.title2)
+						Text(activity.name)
+							.font(.caption)
+					}
+					.frame(maxWidth: .infinity)
+					.padding()
+					.background(
+						sports.selectedActivity == activity.type
+						? activity.selectedColor
+						: activity.unselectedColor
+					)
+					.opacity(session.state == .running ? 0.5 : 1.0)
+					.foregroundColor(
+						sports.selectedActivity == activity.type
+						? .white
+						: .primary
+					)
+					.cornerRadius(10)
+				}
+				.disabled(session.state == .running)
+			}
+		}
 	}
 	
 	private func deviceTable() -> some View {
@@ -156,21 +190,24 @@ struct ContentView: View {
 			
 			HStack(spacing: 12) {
 								
-			   ForEach(Array(ble.sessionsByPeripheral.values), id: \.peripheral.identifier) { session in
-				   VStack {
+				ForEach(
+					Array(ble.sessionsByPeripheral.values),
+					id: \.peripheral.identifier
+				) { session in
+					VStack {
 					   
-					   Text(session.data.localName ?? "Unknown")
-						   .font(.caption)
-						   .lineLimit(1)
-				   }
-				   .frame(width: 80)
-				   .padding(8)
-				   .background(Color(.systemBlue))
-				   .foregroundColor(.white)
-				   .cornerRadius(10)
-			   }
-		   }
-		   .padding(.vertical, 8)
+						Text(session.data.localName ?? "Unknown")
+							.font(.caption)
+							.lineLimit(1)
+					}
+					.frame(width: 80)
+					.padding(8)
+					.background(Color(.systemBlue))
+					.foregroundColor(.white)
+					.cornerRadius(10)
+				}
+			}
+			.padding(.vertical, 8)
 		}
 	}
 
@@ -192,9 +229,11 @@ struct ContentView: View {
 
 #Preview {
 	@Previewable @State var sports = Sports()
+	@Previewable @State var session = Session()
 	
 	ContentView(sports: sports)
 		.environmentObject(BLEManager.shared)
+		.environment(session)
 		.modelContainer(
 			{
 				let schema = Schema([Item.self, KnownDevice.self])

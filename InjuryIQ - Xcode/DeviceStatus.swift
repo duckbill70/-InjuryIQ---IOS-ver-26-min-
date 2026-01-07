@@ -195,7 +195,7 @@ struct DeviceCard: View {
 			// Header: Device name + play/stop icon
 			HStack {
 				Text(device.name)
-					.font(.title3.weight(.semibold))
+					.font(.subheadline.weight(.semibold))
 				Spacer()
 				StatusIcon(status: device.status)
 			}
@@ -220,7 +220,7 @@ struct DeviceCard: View {
 struct DeviceInfoGrid_Previews: PreviewProvider {
 	static var previews: some View {
 		let a = BLEDevice(
-			name: "Device A",
+			name: "StingRay A???",
 			status: .running,
 			batteryPercent: 82,
 			rssi: -58,
@@ -228,7 +228,7 @@ struct DeviceInfoGrid_Previews: PreviewProvider {
 			side: .left
 		)
 		let b = BLEDevice(
-			name: "Device B",
+			name: "StingRay B???",
 			status: .unknown,
 			batteryPercent: 28,
 			rssi: -86,

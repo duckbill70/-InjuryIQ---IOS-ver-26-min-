@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 import Observation
 
-enum ActivityType: String, CaseIterable {
+public enum ActivityType: String, Codable, CaseIterable {
 	case running = "Running"
 	case hiking = "Hiking"
 	case racket = "Racket"
@@ -22,33 +22,30 @@ struct ActivityButton: Identifiable {
 	let icon: String
 	let selectedColor: Color
 	let unselectedColor: Color
-	
-	var name: String {
-			type.rawValue
-		}
+	var name: String {type.descriptor}
 	
 	static let activities = [
 		ActivityButton(
 			type: .running,
-			icon: "figure.run",
+			icon: ActivityType.running.icon,
 			selectedColor: .blue,
 			unselectedColor: Color(.systemGray6)
 		),
 		ActivityButton(
 			type: .hiking,
-			icon: "figure.hiking",
+			icon: ActivityType.hiking.icon,
 			selectedColor: .blue,
 			unselectedColor: Color(.systemGray6)
 		),
 		ActivityButton(
 			type: .racket,
-			icon: "figure.tennis",
+			icon: ActivityType.racket.icon,
 			selectedColor: .blue,
 			unselectedColor: Color(.systemGray6)
 		),
 		ActivityButton(
 			type: .cycling,
-			icon: "figure.outdoor.cycle",
+			icon: ActivityType.cycling.icon,
 			selectedColor: .blue,
 			unselectedColor: Color(.systemGray6)
 		)
@@ -56,14 +53,52 @@ struct ActivityButton: Identifiable {
 }
 
 extension ActivityType {
-	func toSessionActivity() -> SessionActivity {
+	
+	var descriptor: String {
 		switch self {
-		case .running: return .run
-		case .hiking: return .hike
-		case .racket: return .racket
-		case .cycling: return .cycle
+		case .running: return "Running"
+		case .hiking: return "Hiking"
+		case .racket: return "Racket"
+		case .cycling: return "Cycling"
 		}
 	}
+	
+	var icon: String {
+		switch self {
+		case .running: return "figure.run"
+		case .hiking: return "figure.hiking"
+		case .racket: return "figure.tennis"
+		case .cycling: return "figure.outdoor.cycle"
+		}
+	}
+	
+	var mlDistance: Int {
+		switch self {
+		case .running: return 1
+		case .hiking: return 3
+		case .racket: return 0
+		case .cycling: return 10
+		}
+	}
+	
+	var mlSests: Int {
+		switch self {
+		case .running: return 3
+		case .hiking: return 3
+		case .racket: return 3
+		case .cycling: return 3
+		}
+	}
+	
+	var mlDurartion: Int {
+		switch self {
+		case .running: return 0
+		case .hiking: return 0
+		case .racket: return 60
+		case .cycling: return 0
+		}
+	}
+	
 }
 
 @Observable

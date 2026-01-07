@@ -50,7 +50,6 @@ struct PeripheralData {
 	var errorCode		: UInt8?
 	var stats			: UInt16?
 	var snapshotCount	: UInt8?
-	
 	var fatigue			: UInt8?
 	
 	var commandState: CommandState {

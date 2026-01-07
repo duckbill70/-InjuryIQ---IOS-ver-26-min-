@@ -235,11 +235,7 @@ struct StingrayArcShape: Shape {
 		return CGPoint(x: v.x / L, y: v.y / L)
 	}
 	
-	
-	
-	
-	
-	
+
 	
 	
 	struct StingrayArcShape_Previews: PreviewProvider {

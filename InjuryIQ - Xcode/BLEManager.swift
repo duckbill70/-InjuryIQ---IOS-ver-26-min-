@@ -9,6 +9,7 @@ struct DiscoveredPeripheral: Identifiable, Hashable {
     let name: String
     let rssi: Int
     let peripheral: CBPeripheral
+	let localName: String
 }
 
 struct ConnectedInfo: Equatable {
@@ -63,6 +64,8 @@ final class BLEManager: NSObject, ObservableObject {
 
     private var central: CBCentralManager!
     private var disposables: Set<AnyCancellable> = []
+	
+	private var session: Session?
 
     override init() {
         super.init()
@@ -80,7 +83,11 @@ final class BLEManager: NSObject, ObservableObject {
         )
     }
 
-    
+	///Used to attach the current session
+	func attachSession(_ session: Session) {
+		self.session = session
+	}
+	
     func attach(modelContext: ModelContext) {
         precondition(Thread.isMainThread, "[BLE] attach must run on main thread")
         self.modelContext = modelContext
@@ -271,7 +278,8 @@ extension BLEManager: CBCentralManagerDelegate {
             id: peripheral.identifier,
             name: name,
             rssi: RSSI.intValue,
-            peripheral: peripheral
+            peripheral: peripheral,
+			localName: localName ?? "Stringray Unknown"
         )
         if filterDuplicates {
             if let idx = discovered.firstIndex(where: { $0.id == dp.id }) {
@@ -287,6 +295,7 @@ extension BLEManager: CBCentralManagerDelegate {
     func centralManager( _ central: CBCentralManager,  didConnect peripheral: CBPeripheral ) {
         let uuid = peripheral.identifier
         let name = peripheral.name ?? "Unknown"
+		let localName = discovered.first(where: { $0.id == uuid })?.localName ?? "Unknown"
 
         //connectedPeripheral = peripheral
 		connectedPeripherals.append(peripheral)
@@ -296,7 +305,7 @@ extension BLEManager: CBCentralManagerDelegate {
 		
 		// Create session on connection
 		if sessionsByPeripheral[uuid] == nil {
-			let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: name)
+			let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: localName)
 			sessionsByPeripheral[uuid] = session
 		}
 	
@@ -310,6 +319,8 @@ extension BLEManager: CBCentralManagerDelegate {
             persistKnownDevice(uuid: peripheral.identifier, name: name)
             updateKnownDevice(uuid: uuid, isConnected: true)
         }
+		
+		session?.logger.append(kind: .bleConnected, metadata: ["device": "\(localName)"])
 
     }
 
@@ -320,7 +331,9 @@ extension BLEManager: CBCentralManagerDelegate {
     }
 
     func centralManager( _ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error? ) {
-        print("[BLE] Disconnected from: \(peripheral.name ?? "Unknown")")
+		
+		let localName = discovered.first(where: { $0.id == peripheral.identifier })?.localName ?? "Unknown"
+		print("[BLE] Disconnected from: \(localName)")
 
 		connectedPeripherals.removeAll { $0.identifier == peripheral.identifier }
 		connectedInfo.removeAll { $0.uuid == peripheral.identifier }
@@ -332,6 +345,8 @@ extension BLEManager: CBCentralManagerDelegate {
 		sessionsByPeripheral.removeValue(forKey: peripheral.identifier)
 		
         updateKnownDevice(uuid: peripheral.identifier, isConnected: false)
+		
+		session?.logger.append(kind: .bleDisconnected, metadata: ["device": "\(localName)"])
     }
 }
 
