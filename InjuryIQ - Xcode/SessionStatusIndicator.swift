@@ -190,8 +190,8 @@ public struct SessionStatusIndicator: View {
 						.foregroundStyle(overallDim ? .secondary : .primary)
 					
 					HStack(){
-						//Text(String(format: "%.2km", distance))
-						Text(String(format: "%dkm", Int(distance)))
+						//Text(String(format: "%dkm", Int(distance)))
+						Text(String(format: "%0.1fkm", distance))
 							.frame(width: 70, alignment: .trailing)
 						//Text( speed > 0 ? String(format: "%.2fkmph", speed) : "-kmph")
 						Text(speed > 0 ? String(format: "%dkmph", Int(speed)) : "-- kmph")
@@ -476,7 +476,7 @@ struct HalfProgressArcShape: Shape {
 		duration: 0,
 		distance: 0.5,
 		speed: 4.8,
-		sessionState: .idle,
+		sessionState: .stopped,
 		activity: .hiking,
 		subtitle: nil
 	)

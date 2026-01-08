@@ -25,7 +25,7 @@ public struct SessionControlButton: View {
 }
 
 #Preview {
-	@Previewable @State var state: SessionState = .idle
+	@Previewable @State var state: SessionState = .stopped
 	VStack(spacing: 16) {
 		SessionControlButton(selectedActivity: "Running")
 		Text("State: \(state.rawValue)")

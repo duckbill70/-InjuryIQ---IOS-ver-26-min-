@@ -32,11 +32,12 @@ enum DeviceState: String {
 }
 
 enum CommandState: UInt8 {
-	case stopped = 0x00
-	case running = 0x01
-	case dumping = 0x03
-	case showingLocation = 0x04
-	case unknown = 0xFF
+	case cmd_state_off 		= 0x00
+	case cmd_state_idle 	= 0x01
+	case cmd_state_running 	= 0x02
+	case cmd_state_location = 0x03
+	case cmd_state_snapshot = 0x04
+	case unknown 			= 0xFF
 }
 
 struct PeripheralData {
@@ -49,8 +50,9 @@ struct PeripheralData {
 	
 	var errorCode		: UInt8?
 	var stats			: UInt16?
-	var snapshotCount	: UInt8?
 	var fatigue			: UInt8?
+	var sampleRate		: UInt16?
+	var rssi			: Int?
 	
 	var commandState: CommandState {
 		return command ?? .unknown
@@ -95,10 +97,8 @@ class PeripheralSession: ObservableObject {
 	/// UUIDs for Command Service and its characteristics
 	static let commandServiceUUID = CBUUID(string: "12345679-1234-5678-1234-56789abcdef0")
 	static let commandCharUUID    = CBUUID(string: "12345679-1234-5678-1234-56789abcdef1")
-	static let statsCharUUID      = CBUUID(string: "12345679-1234-5678-1234-56789abcdef2")
-	static let locationCharUUID   = CBUUID(string: "12345679-1234-5678-1234-56789abcdef3")
-	static let snapshotCharUUID   = CBUUID(string: "12345679-1234-5678-1234-56789abcdef4")
 	static let errorCharUUID      = CBUUID(string: "12345679-1234-5678-1234-56789abcdef5")
+	static let sampleRateUUID      = CBUUID(string: "12345679-1234-5678-1234-56789abcdef6")
 	
 	///UUIDs Fatigue Service and its characteristics
 	static let fatigueServiceUUID = CBUUID(string: "12345678-1234-5678-1234-56789abcdef0")
@@ -108,10 +108,6 @@ class PeripheralSession: ObservableObject {
 	static let fifoServiceUUID 		= CBUUID(string: "12345680-1234-5678-1234-56789abcdef0")
 	static let fifoStreamCharUUID   = CBUUID(string: "12345680-1234-5678-1234-56789abcdef1")
 	static let fifoStatusCharUUID   = CBUUID(string: "12345680-1234-5678-1234-56789abcdef2")
-	
-	///UUIDs Steps Service and its characteristics
-	static let stepsServiceUUID = CBUUID(string: "1814") // Standard UUID for Running Speed and Cadence Service
-	static let stepsCharUUID    = CBUUID(string: "2A53") // Standard UUID for RSC Measurement Characteristic
 	
 	///UUIDs Battery Service and its characteristics
 	static let batteryServiceUUID = CBUUID(string: "180F") // Standard UUID for
@@ -126,7 +122,15 @@ class PeripheralSession: ObservableObject {
 			batteryLevel: nil,
 			command: nil,
 			location: nil,
+			sampleRate: nil,
 		)
+	}
+	
+	// Method to update RSSI
+	func updateRSSI(_ rssi: Int) {
+		data.rssi = rssi
+		//print ("[PeripheralSession] Updating RSSI : \(rssi) for peripheral: \(data.localName)")
+		objectWillChange.send()
 	}
 
 	// Write a command (e.g., CMD_RUN)
@@ -190,7 +194,6 @@ extension PeripheralSession {
 			case fatigueServiceUUID: return "Fatigue Service"
 			case fifoServiceUUID: return "Fifo Streaming Service"
 			case batteryServiceUUID: return "Battery Service"
-			case stepsServiceUUID: return "Steps Service"
 			// Add more cases as needed
 			default: return uuid.uuidString
 		}
@@ -201,10 +204,8 @@ extension PeripheralSession {
 			
 		// Command Service
 		case (commandServiceUUID, commandCharUUID): return "Command"
-		case (commandServiceUUID, statsCharUUID): return "Stats"
-		case (commandServiceUUID, locationCharUUID): return "Location"
-		case (commandServiceUUID, snapshotCharUUID): return "Snapshot"
 		case (commandServiceUUID, errorCharUUID): return "Error"
+		case (commandServiceUUID, sampleRateUUID): return "Sample Rate"
 			
 		// Fatigue Service
 		case (fatigueServiceUUID, fatigueCharUUID): return "Fatigue"
@@ -212,9 +213,6 @@ extension PeripheralSession {
 		// Fifo Streaming Service
 		case (fifoServiceUUID, fifoStreamCharUUID): return "Fifo Stream"
 		case (fifoServiceUUID, fifoStatusCharUUID): return "Fifo Status"
-			
-		// Steps Service
-		case (stepsServiceUUID, stepsCharUUID): return "Steps"
 			
 		// Battery Service
 		case (batteryServiceUUID, batteryCharUUID): return "Battery Level"
@@ -242,46 +240,49 @@ extension PeripheralSession {
 	}
 	
 	func handleNotification(from peripheral: CBPeripheral, for characteristic: CBCharacteristic, value: Data) {
+		 
 		let serviceText = characteristic.service.map { Self.serviceName(for: $0.uuid) } ?? "Unknown Service"
 		let charText = Self.characteristicName(for: characteristic.uuid, in: characteristic.service?.uuid ?? CBUUID())
 		
-		if 	characteristic.service?.uuid != Self.batteryServiceUUID && characteristic.service?.uuid != Self.fatigueServiceUUID && characteristic.service?.uuid != Self.stepsServiceUUID {
-			print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
-		}
+		//if 	characteristic.service?.uuid != Self.batteryServiceUUID && characteristic.service?.uuid != Self.fatigueServiceUUID  {
+		//	print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
+		//}
 		
 		switch (characteristic.service?.uuid, characteristic.uuid) {
 			
-			/// Command Service
+			/// Command Characteristic
 			case (PeripheralSession.commandServiceUUID, PeripheralSession.commandCharUUID):
 				data.command = CommandState(rawValue: value.first ?? 0) ?? .unknown
+				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 			
-			///Battery Service
+			/// Sample Rate Characteristic
+			case (PeripheralSession.commandServiceUUID, PeripheralSession.sampleRateUUID):
+				if value.count >= 2 {
+					let lo = UInt16(value[0])
+					let hi = UInt16(value[1]) << 8
+					data.sampleRate = hi | lo
+				}
+			
+			///Battery Characteristic
 			case (PeripheralSession.batteryServiceUUID, PeripheralSession.batteryCharUUID):
 				data.batteryLevel = value.first
 			
-			///Fa§tigue Service
+			///Fatigue Characteristic
 			case (PeripheralSession.fatigueServiceUUID, PeripheralSession.fatigueCharUUID):
 				data.fatigue = value.first
-			
-			///Location Characteristic
-			case (PeripheralSession.commandServiceUUID, PeripheralSession.locationCharUUID):
-				data.location = value.first
 			
 			///Error Characteristic
 			case (PeripheralSession.commandServiceUUID, PeripheralSession.errorCharUUID):
 				data.errorCode = value.first
+				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 			
-			///New: snapshot count (assume 2-byte little-endian)
-			case (Self.commandServiceUUID, Self.snapshotCharUUID):
-				data.snapshotCount = value.first
+			/// FIFO Stream Status Char
+			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStreamCharUUID):
+				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 
-			/// New: FIFO fill (assume 1 byte 0...100)
-			case (Self.fifoServiceUUID, Self.fifoStatusCharUUID):
-				if value.count >= 2 {
-					let lo = UInt16(value[0])
-					let hi = UInt16(value[1]) << 8
-					data.stats = hi | lo
-				}
+			/// FIFO Stream Status Char
+			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStatusCharUUID):
+				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 				
 			
 			default:

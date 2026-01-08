@@ -14,33 +14,36 @@ import SwiftUI
 //case unknown = 0xFF
 
 enum DeviceStatus: String {
-	case running, stopped, dumping, showingLocation, unknown
+	case device_off, device_idle, device_running, device_snapshot, device_showingLocation, unknown
 	
 	init(from commandState: CommandState) {
 			switch commandState {
-			case .stopped: self = .stopped
-			case .running: self = .running
-			case .dumping: self = .dumping
-			case .showingLocation: self = .showingLocation
-			default: self = .unknown
+				case .cmd_state_off			: self = .device_off
+				case .cmd_state_idle		: self = .device_idle
+				case .cmd_state_running		: self = .device_running
+				case .cmd_state_location	: self = .device_showingLocation
+				case .cmd_state_snapshot	: self = .device_snapshot
+				default: self = .unknown
 			}
 		}
 	
 	var symbolName: String {
 		switch self {
-		case .running:  return "play.fill"
-		case .stopped: return "stop.fill"
-		case .dumping: return "recordingtape"
-		case .showingLocation: return "location.fill"
+		case .device_off : return "powersleep"
+		case .device_idle: return "stop.fill"
+		case .device_running:  return "play.fill"
+		case .device_showingLocation: return "location.fill"
+		case .device_snapshot: return "recordingtape"
 		case .unknown: return "questionmark"
 		}
 	}
 	var color: Color {
 		switch self {
-		case .running:  return .green
-		case .stopped: return .red
-		case .dumping: return .yellow
-		case .showingLocation: return .purple
+		case .device_off: return .black
+		case .device_idle: return .blue
+		case .device_running: return .green
+		case .device_showingLocation: return .purple
+		case .device_snapshot: return .yellow
 		case .unknown: return .gray
 		}
 	}
@@ -119,7 +122,7 @@ struct StatusIcon: View {
 				.foregroundStyle(status.color)
 		}
 		.frame(width: 36, height: 36)
-		.accessibilityLabel(status == .running ? "Run" : "Stop")
+		.accessibilityLabel(status == .device_running ? "Run" : "Stop")
 	}
 }
 
@@ -221,7 +224,7 @@ struct DeviceInfoGrid_Previews: PreviewProvider {
 	static var previews: some View {
 		let a = BLEDevice(
 			name: "StingRay A???",
-			status: .running,
+			status: .device_running,
 			batteryPercent: 82,
 			rssi: -58,
 			hz: 120,

@@ -14,7 +14,7 @@ internal import _LocationEssentials
 
 // Public so it can be used by public views like SessionStatusIndicator
 public enum SessionState: String, CaseIterable {
-	case idle = "Idle"
+	//case idle = "Idle"
 	case running = "Active"
 	case paused = "Paused"
 	case stopped = "Stopped"
@@ -45,7 +45,7 @@ public extension SessionState {
 		case .running: return .green
 		case .paused:  return .yellow
 		case .stopped: return .gray
-		case .idle:    return .blue
+		//case .idle:    return .blue
 		}
 	}
 
@@ -55,7 +55,7 @@ public extension SessionState {
 
 	var isDimmed: Bool {
 		switch self {
-		case .stopped, .paused, .idle:
+		case .stopped, .paused ://, .idle:
 			return true
 		case .running:
 			return false
@@ -66,7 +66,7 @@ public extension SessionState {
 // MARK: - Session owner (Observation framework)
 @Observable
 final class Session {
-	var state: SessionState = .idle
+	var state: SessionState = .stopped
 	var duration: TimeInterval = 0
 	let logger = SessionLogger()
 	private var bleManager: BLEManager?
@@ -110,10 +110,18 @@ final class Session {
 			self.bleManager = manager
 	}
 	
+	private func sendCommandToDevices(_ value: UInt8) {
+		if let sessions = bleManager?.sessionsByPeripheral.values {
+			for device in sessions {
+				device.writeCommand(value)
+			}
+		}
+	}
+	
 	// Convenience methods (no BLE side-effects yet)
 	func run() {
 		switch state {
-		case .idle, .stopped:
+		case .stopped: //, .idle:
 			logger.start(activity: activity.isEmpty ? "Session" : activity)
 			///PeripheralSessions
 			if let sessions = bleManager?.sessionsByPeripheral.values {
@@ -123,6 +131,10 @@ final class Session {
 			} else {
 				logger.append(kind: .note, metadata: ["devices": "No devices attached:" ])
 			}
+			
+			///TODO(BLE): send "run" command
+			sendCommandToDevices(2) // cmd_state_running
+			
 			state = .running
 			duration = 0
 			
@@ -138,13 +150,15 @@ final class Session {
 			locationManager.requestAuthorization()
 			locationManager.startUpdating()
 			
-			
-			// TODO(BLE): send "run" command
 		case .paused:
 			logger.append(kind: .resume, metadata: ["message": "Resumed"])
+			
+			///TODO(BLE): send "run" command
+			sendCommandToDevices(2) // cmd_state_running
+			
 			state = .running
 			startTimer()
-			// TODO(BLE): send "run" command
+
 		case .running:
 			// Already running; do nothing
 			break
@@ -157,17 +171,21 @@ final class Session {
 			stopTimer()
 			locationManager.stopUpdating()
 			logger.append(kind: .pause, metadata: ["message": "Paused"])
-			// TODO(BLE): send "pause" command (or stop if pause has no distinct command)
+
+			/// TODO(BLE): send "stop" command
+			sendCommandToDevices(1) // cmd_state_idle
 		}
 	}
 	
 	func stop() {
 		if state != .stopped {
+			
+			/// TODO(BLE): send "stop" command
+			sendCommandToDevices(1) // cmd_state_idle
+			
 			state = .stopped
 			stopTimer()
 			locationManager.stopUpdating()
-			
-			// TODO(BLE): send "stop" command
 			
 			///End state logging
 			logger.append(kind: .location, metadata: ["end_distance": "\(currentDistance)"])
@@ -293,5 +311,7 @@ struct StopButton: View {
 		}
 		.buttonStyle(.plain)
 		.accessibilityLabel(Text(session.state.stopLabel))
+		.disabled(session.state == .stopped)
+		.opacity(session.state == .stopped ? 0.4 : 1.0)
 	}
 }

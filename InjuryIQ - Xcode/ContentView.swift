@@ -15,7 +15,12 @@ struct ContentView: View {
 	@Query private var items: [Item]
 	@Bindable var sports: Sports
 	@Environment(Session.self) private var session
-	@StateObject private var mlObject = MLTrainingObject(type: .running)
+	@StateObject private var mlObject: MLTrainingObject
+
+	init(sports: Sports) {
+		self._sports = Bindable(wrappedValue: sports)
+		_mlObject = StateObject(wrappedValue: MLTrainingObject(type: sports.selectedActivity))
+	}
 
 	var body: some View {
 		TabView {
@@ -72,8 +77,8 @@ struct ContentView: View {
 							from: leftSession?.data.commandState ?? .unknown
 						),
 						batteryPercent: leftSession?.data.batteryPercent ?? 0,
-						rssi: -58,
-						hz: 0,
+						rssi: Int(leftSession?.data.rssi ?? 0),
+						hz: Double(leftSession?.data.sampleRate ?? 0),
 						side: leftSession?.data.location
 							.flatMap { DeviceSide(rawValue: Int($0))
 							} ?? .unknown
@@ -85,8 +90,8 @@ struct ContentView: View {
 							from: rightSession?.data.commandState ?? .unknown
 						),
 						batteryPercent: rightSession?.data.batteryPercent ?? 0,
-						rssi: -86,
-						hz: 0,
+						rssi: Int(rightSession?.data.rssi ?? 0),
+						hz: Double(rightSession?.data.sampleRate ?? 0),
 						side: rightSession?.data.location
 							.flatMap { DeviceSide(rawValue: Int($0))
 							} ?? .unknown

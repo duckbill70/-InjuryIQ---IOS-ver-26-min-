@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-struct MLCardView: View {
+struct niuMLCardView: View {
 	
 	let sport : Sports
 	let session: Session
@@ -296,5 +296,5 @@ struct MLCardView: View {
 		MLSession(id: UUID(), data: Data())                // 0% full
 	]
 	let dummyMLObject = MLObject(type: .running, active: true, sessions: dummySessions)
-	MLCardView(sport: Sports(), session: Session(), type: .agility, previewMLObject: dummyMLObject)
+	niuMLCardView(sport: Sports(), session: Session(), type: .agility, previewMLObject: dummyMLObject)
 }

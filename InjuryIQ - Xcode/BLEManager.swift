@@ -28,7 +28,7 @@ final class BLEManager: NSObject, ObservableObject {
 	
 	@Published var connectedPeripherals: [CBPeripheral] = [] {
 		didSet {
-		  //print("[BLE] connectedPeripherals updated: \(connectedPeripherals)")
+		  //print("[BLEmanager] connectedPeripherals updated: \(connectedPeripherals)")
 		}
 	}
 	
@@ -37,7 +37,7 @@ final class BLEManager: NSObject, ObservableObject {
 	
 	@Published var characteristicsByPeripheral: [UUID: [CBUUID: CBCharacteristic]] = [:] {
 		didSet {
-		  //print("[BLE] characteristicsByPeripheral updated: \(characteristicsByPeripheral)")
+		  //print("[BLEmanager] characteristicsByPeripheral updated: \(characteristicsByPeripheral)")
 		}
 	}
 	
@@ -45,7 +45,7 @@ final class BLEManager: NSObject, ObservableObject {
 	@Published var sessionsByPeripheral: [UUID: PeripheralSession] = [:]
 	{
 	   didSet {
-		 //print("[BLE] sessionsByPeripheral updated: \(sessionsByPeripheral)")
+		 //print("[BLEmanager] sessionsByPeripheral updated: \(sessionsByPeripheral)")
 	   }
    }
     
@@ -66,6 +66,8 @@ final class BLEManager: NSObject, ObservableObject {
     private var disposables: Set<AnyCancellable> = []
 	
 	private var session: Session?
+	
+	private var rssiTimer : Timer?
 
     override init() {
         super.init()
@@ -79,7 +81,7 @@ final class BLEManager: NSObject, ObservableObject {
             options: options
         )
         print(
-            "[BLE] BLEManager initialized - CBCentralManager created with power alert option"
+            "[BLEmanager] BLEManager initialized - CBCentralManager created with power alert option"
         )
     }
 
@@ -89,21 +91,21 @@ final class BLEManager: NSObject, ObservableObject {
 	}
 	
     func attach(modelContext: ModelContext) {
-        precondition(Thread.isMainThread, "[BLE] attach must run on main thread")
+        precondition(Thread.isMainThread, "[BLEmanager] attach must run on main thread")
         self.modelContext = modelContext
-        print("[BLE] ModelContext attached")
+        print("[BLEmanager] ModelContext attached")
 
         // If you want a runtime smoke test, do a tiny fetch in a do/catch block:
         do {
             var descriptor = FetchDescriptor<KnownDevice>()
             descriptor.fetchLimit = 1
             _ = try modelContext.fetch(descriptor) // will throw if KnownDevice not in schema
-            print("[BLE] Runtime schema check passed for KnownDevice")
+            print("[BLEmanager] Runtime schema check passed for KnownDevice")
         } catch {
             let nsError = error as NSError
-            print("[BLE] Schema check failed: \(nsError.domain) (\(nsError.code)) - \(nsError.localizedDescription)")
+            print("[BLEmanager] Schema check failed: \(nsError.domain) (\(nsError.code)) - \(nsError.localizedDescription)")
             // You can assert in debug builds if desired:
-            // assertionFailure("[BLE] KnownDevice not available in this ModelContainer schema")
+            // assertionFailure("[BLEmanager] KnownDevice not available in this ModelContainer schema")
         }
     }
 
@@ -111,9 +113,9 @@ final class BLEManager: NSObject, ObservableObject {
 
     /// Persist known device info to SwiftData
     private func persistKnownDevice(uuid: UUID, name: String) {
-        assert(Thread.isMainThread, "[BLE] persistKnownDevice must run on main thread")
+        assert(Thread.isMainThread, "[BLEmanager] persistKnownDevice must run on main thread")
         guard let ctx = self.modelContext else {
-            print("[BLE] No ModelContext attached - cannot persist device")
+            print("[BLEmanager] No ModelContext attached - cannot persist device")
             return
         }
 
@@ -128,19 +130,19 @@ final class BLEManager: NSObject, ObservableObject {
             if let kd = existing {
                 kd.name = name
                 kd.lastConnectedAt = Date()
-                print("[BLE] Updated known device: \(name) (\(uuid))")
+                print("[BLEmanager] Updated known device: \(name) (\(uuid))")
             } else {
                 let kd = KnownDevice(uuid: uuid, name: name, lastConnectedAt: Date())
                 ctx.insert(kd)
-                print("[BLE] Saved new known device: \(name) (\(uuid))")
+                print("[BLEmanager] Saved new known device: \(name) (\(uuid))")
             }
 
             try ctx.save()
-            print("[BLE] SwiftData save OK (KnownDevice)")
+            print("[BLEmanager] SwiftData save OK (KnownDevice)")
 
         } catch {
             let nsError = error as NSError
-            print("[BLE] SwiftData Error: \(nsError.domain) (\(nsError.code)) - \(nsError.localizedDescription)")
+            print("[BLEmanager] SwiftData Error: \(nsError.domain) (\(nsError.code)) - \(nsError.localizedDescription)")
         }
     }
     
@@ -158,7 +160,7 @@ final class BLEManager: NSObject, ObservableObject {
 
     /// Request Bluetooth permissions explicitly
     func requestBluetoothPermission() {
-        print("[BLE] requestBluetoothPermission() called")
+        print("[BLEmanager] requestBluetoothPermission() called")
         _ = central.state  // touch state; callbacks will fire as needed
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.checkBluetoothState()
@@ -169,7 +171,7 @@ final class BLEManager: NSObject, ObservableObject {
     /// Check and log the current Bluetooth state
     func checkBluetoothState() {
         let state = central.state
-        print("[BLE] checkBluetoothState() - current state: \(state.rawValue)")
+        print("[BLEmanager] checkBluetoothState() - current state: \(state.rawValue)")
         updateStateUI(state)
     }
 
@@ -178,44 +180,44 @@ final class BLEManager: NSObject, ObservableObject {
         case .unknown:
             bluetoothState = "⏳ Waiting for Bluetooth to initialize..."
             isBluetoothOn = false
-            print("[BLE] State: UNKNOWN (0)")
+            print("[BLEmanager] State: UNKNOWN (0)")
         case .resetting:
             bluetoothState = "⏳ Bluetooth is resetting..."
             isBluetoothOn = false
-            print("[BLE] State: RESETTING (1)")
+            print("[BLEmanager] State: RESETTING (1)")
         case .unsupported:
             bluetoothState = "❌ Bluetooth not supported on this device"
             isBluetoothOn = false
-            print("[BLE] State: UNSUPPORTED (2)")
+            print("[BLEmanager] State: UNSUPPORTED (2)")
         case .unauthorized:
             bluetoothState =
                 "❌ Bluetooth permission denied.\nEnable in Settings > Privacy & Security > Bluetooth"
             isBluetoothOn = false
-            print("[BLE] State: UNAUTHORIZED (3)")
+            print("[BLEmanager] State: UNAUTHORIZED (3)")
         case .poweredOff:
             bluetoothState =
                 "❌ Bluetooth is OFF.\nEnable in Settings > Bluetooth"
             isBluetoothOn = false
-            print("[BLE] State: POWERED_OFF (4)")
+            print("[BLEmanager] State: POWERED_OFF (4)")
         case .poweredOn:
             bluetoothState = "✅ Bluetooth is ready"
             isBluetoothOn = true
-            print("[BLE] State: POWERED_ON (5) ✅")
+            print("[BLEmanager] State: POWERED_ON (5) ✅")
         @unknown default:
             bluetoothState = "⚠️ Unknown Bluetooth state"
             isBluetoothOn = false
-            print("[BLE] State: UNKNOWN_DEFAULT")
+            print("[BLEmanager] State: UNKNOWN_DEFAULT")
         }
     }
 
     func startScan(serviceUUIDs: [CBUUID]? = nil) {
         guard isBluetoothOn else {
-            print("[BLE] Cannot start scan - Bluetooth is not on")
+            print("[BLEmanager] Cannot start scan - Bluetooth is not on")
             return
         }
         if !filterDuplicates { discovered.removeAll() }
         isScanning = true
-        print("[BLE] Starting BLE scan...")
+        print("[BLEmanager] Starting BLE scan...")
         central.scanForPeripherals(
             withServices: serviceUUIDs,
             options: [
@@ -227,20 +229,20 @@ final class BLEManager: NSObject, ObservableObject {
     func stopScan() {
         isScanning = false
         central.stopScan()
-        print("[BLE] Stopped BLE scan")
+        print("[BLEmanager] Stopped BLE scan")
     }
 
     func connect(_ dp: DiscoveredPeripheral) {
         services.removeAll()
         characteristicsByService.removeAll()
         lastError = nil
-        print("[BLE] Connecting to: \(dp.name)")
+        print("[BLEmanager] Connecting to: \(dp.name)")
         central.connect(dp.peripheral, options: nil)
     }
 
     func disconnect(_ peripheral: CBPeripheral) {
         //if let p = connectedPeripheral {
-            print("[BLE] Disconnecting from: \(peripheral.name ?? "Unknown")")
+            print("[BLEmanager] Disconnecting from: \(peripheral.name ?? "Unknown")")
         //    central.cancelPeripheralConnection(p)
         //}
 		central.cancelPeripheralConnection(peripheral)
@@ -249,23 +251,30 @@ final class BLEManager: NSObject, ObservableObject {
 
 // MARK: - CBCentralManagerDelegate
 extension BLEManager: CBCentralManagerDelegate {
-    func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        print("[BLE] centralManagerDidUpdateState: \(central.state.rawValue)")
+	
+	func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        print("[BLEmanager] centralManagerDidUpdateState: \(central.state.rawValue)")
         updateStateUI(central.state)
 
         if central.state == .poweredOn && autoScanOnLaunch {
-            print("[BLE] Auto-scan enabled and Bluetooth is on - starting scan")
+            print("[BLEmanager] Auto-scan enabled and Bluetooth is on - starting scan")
             startScan()
         } else if central.state != .poweredOn {
             stopScan()
             discovered.removeAll()
         }
     }
+	
+	private func updateRSSIForConnectedPeripherals() {
+		for peripheral in connectedPeripherals {
+			peripheral.readRSSI()
+		}
+	}
 
     func centralManager( _ central: CBCentralManager,  didDiscover peripheral: CBPeripheral, advertisementData: [String: Any],  rssi RSSI: NSNumber ) {
 		let name = peripheral.name ?? "Unknown"
 		let localName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
-		print("[BLE] Discovered: \(localName ?? name) - RSSI: \(RSSI)")
+		//print("[BLEmanager] Discovered: \(localName ?? name) - RSSI: \(RSSI)")
 		
 		///Create a PeripheralSession Obhect for STINGRAY devices
 		//if name == "STINGRAY" {
@@ -310,7 +319,7 @@ extension BLEManager: CBCentralManagerDelegate {
 		}
 	
         
-        print("[BLE] Connected to: \(name)")
+        print("[BLEmanager] Connected to: \(name)")
 
         peripheral.delegate = self
         peripheral.discoverServices(nil)
@@ -320,20 +329,26 @@ extension BLEManager: CBCentralManagerDelegate {
             updateKnownDevice(uuid: uuid, isConnected: true)
         }
 		
+		rssiTimer?.invalidate()
+		rssiTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+			guard let self else { return }
+			Task { @MainActor in self.updateRSSIForConnectedPeripherals() }
+		}
+		
 		session?.logger.append(kind: .bleConnected, metadata: ["device": "\(localName)"])
 
     }
 
     func centralManager( _ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error? ) {
         let errorMsg = error?.localizedDescription ?? "Unknown error"
-        print("[BLE] Failed to connect: \(errorMsg)")
+        print("[BLEmanager] Failed to connect: \(errorMsg)")
         lastError = errorMsg
     }
 
     func centralManager( _ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error? ) {
 		
 		let localName = discovered.first(where: { $0.id == peripheral.identifier })?.localName ?? "Unknown"
-		print("[BLE] Disconnected from: \(localName)")
+		print("[BLEmanager] Disconnected from: \(localName)")
 
 		connectedPeripherals.removeAll { $0.identifier == peripheral.identifier }
 		connectedInfo.removeAll { $0.uuid == peripheral.identifier }
@@ -346,6 +361,11 @@ extension BLEManager: CBCentralManagerDelegate {
 		
         updateKnownDevice(uuid: peripheral.identifier, isConnected: false)
 		
+		if connectedPeripherals.isEmpty {
+			rssiTimer?.invalidate()
+			rssiTimer = nil
+		}
+		
 		session?.logger.append(kind: .bleDisconnected, metadata: ["device": "\(localName)"])
     }
 }
@@ -356,11 +376,11 @@ extension BLEManager: CBPeripheralDelegate {
     func peripheral( _ peripheral: CBPeripheral, didDiscoverServices error: Error? ) {
         if let error = error {
             lastError = error.localizedDescription
-            print("[BLE] Error discovering services: \(error)")
+            print("[BLEmanager] Error discovering services: \(error)")
             return
         }
         guard let svcs = peripheral.services else { return }
-        //print("[BLE] Discovered \(svcs.count) services")
+        //print("[BLEmanager] Discovered \(svcs.count) services")
         services = svcs
         svcs.forEach { peripheral.discoverCharacteristics(nil, for: $0) }
     }
@@ -368,7 +388,7 @@ extension BLEManager: CBPeripheralDelegate {
     func peripheral( _ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,  error: Error? ) {
 		if let error = error {
 				lastError = error.localizedDescription
-				print("[BLE] Error discovering characteristics: \(error)")
+				print("[BLEmanager] Error discovering characteristics: \(error)")
 				return
 		}
 		let chars = service.characteristics ?? []
@@ -377,8 +397,8 @@ extension BLEManager: CBPeripheralDelegate {
 		
 		///Update PeripheralSession with discovered characteristics
 		// Use existing session - don't create new one
-		guard var session = sessionsByPeripheral[peripheral.identifier] else {
-			print("[BLE] Warning: No session found for peripheral \(peripheral.identifier)")
+		guard let session = sessionsByPeripheral[peripheral.identifier] else {
+			print("[BLEmanager] Warning: No session found for peripheral \(peripheral.identifier)")
 			return
 		}
 		
@@ -391,12 +411,12 @@ extension BLEManager: CBPeripheralDelegate {
 	
 	func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
 		if let error = error {
-			print("[BLE] Error receiving notification for \(characteristic.uuid): \(error)")
+			print("[BLEmanager] Error receiving notification for \(characteristic.uuid): \(error)")
 			lastError = error.localizedDescription
 			return
 		}
 		guard let value = characteristic.value else {
-			print("[BLE] No value received for \(characteristic.uuid)")
+			print("[BLEmanager] No value received for \(characteristic.uuid)")
 			return
 		}
 		// Pass the value to the PeripheralSession
@@ -405,4 +425,23 @@ extension BLEManager: CBPeripheralDelegate {
 			sessionsByPeripheral[peripheral.identifier] = session
 		}
 	}
+	
+	func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+		
+		if let session = sessionsByPeripheral[peripheral.identifier] {
+			//print ("[BLEmanager] Updating RSSI : \(RSSI.intValue) for peripheral: \(session.data.localName ?? "unknown")")
+			session.updateRSSI(RSSI.intValue)
+			sessionsByPeripheral[peripheral.identifier] = session
+		}
+	}
+
+	func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+		if let error = error {
+			print("[BLEManager] Error writing to \(characteristic.uuid) for peripheral \(peripheral.identifier): \(error.localizedDescription)")
+			lastError = error.localizedDescription
+		} else {
+			print("[BLEManager] Successfully wrote to \(characteristic.uuid) for peripheral \(peripheral.identifier)")
+		}
+	}
+	
 }

@@ -8,7 +8,7 @@
 import SwiftUI
 import UIKit
 
-struct AITrainingView: View {
+struct niuAITrainingView: View {
 	@EnvironmentObject private var ble: BLEManager
 	@Environment(\.modelContext) private var modelContext
 	@Environment(Session.self) private var session
@@ -93,7 +93,7 @@ struct AITrainingView: View {
 	@Previewable @State var sports = Sports()
 	@Previewable @State var session = Session()
 	
-    AITrainingView(sports: sports)
+    niuAITrainingView(sports: sports)
 		.environmentObject(BLEManager.shared)
 		.environment(session)
 	
