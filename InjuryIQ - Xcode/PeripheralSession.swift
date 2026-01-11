@@ -86,9 +86,13 @@ extension PeripheralData {
 	}
 }
 
-class PeripheralSession: ObservableObject {
+class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	
 	let peripheral: CBPeripheral
+	
+	///lccap channel management
+	var l2capChannel: CBL2CAPChannel?
+	var l2capOpenAttempted = false // Add this flag
 	
 	///Publiched Observable objects in the session
 	@Published var characteristics: [CharKey: CBCharacteristic] = [:]
@@ -108,6 +112,7 @@ class PeripheralSession: ObservableObject {
 	static let fifoServiceUUID 		= CBUUID(string: "12345680-1234-5678-1234-56789abcdef0")
 	static let fifoStreamCharUUID   = CBUUID(string: "12345680-1234-5678-1234-56789abcdef1")
 	static let fifoStatusCharUUID   = CBUUID(string: "12345680-1234-5678-1234-56789abcdef2")
+	static let fifoL2CAPCharUUID	= CBUUID(string: "12345680-1234-5678-1234-56789ABCDEF3")
 	
 	///UUIDs Battery Service and its characteristics
 	static let batteryServiceUUID = CBUUID(string: "180F") // Standard UUID for
@@ -125,6 +130,30 @@ class PeripheralSession: ObservableObject {
 			sampleRate: nil,
 		)
 	}
+	
+	///Stream Delegate:
+	func stream(_ aStream: Stream, handle eventCode: Stream.Event) {
+			switch eventCode {
+			case .hasBytesAvailable:
+				if let inputStream = aStream as? InputStream {
+					var buffer = [UInt8](repeating: 0, count: 1024)
+					while inputStream.hasBytesAvailable {
+						let bytesRead = inputStream.read(&buffer, maxLength: buffer.count)
+						if bytesRead > 0 {
+							let data = Data(buffer.prefix(bytesRead))
+							
+							///Next STEPS HERE!!!!!!!!!!!!!!!
+							//print("[PeripheralSession] Received L2CAP data: \(data as NSData)")
+							// Process data as needed
+						}
+					}
+				}
+			case .endEncountered, .errorOccurred:
+				print("[PeripheralSession] L2CAP input stream closed or error")
+			default:
+				break
+			}
+		}
 	
 	// Method to update RSSI
 	func updateRSSI(_ rssi: Int) {
@@ -213,6 +242,7 @@ extension PeripheralSession {
 		// Fifo Streaming Service
 		case (fifoServiceUUID, fifoStreamCharUUID): return "Fifo Stream"
 		case (fifoServiceUUID, fifoStatusCharUUID): return "Fifo Status"
+		case (fifoServiceUUID, fifoL2CAPCharUUID): return "Fifo L2CAP"
 			
 		// Battery Service
 		case (batteryServiceUUID, batteryCharUUID): return "Battery Level"
@@ -225,17 +255,48 @@ extension PeripheralSession {
 	func addCharacteristic(_ char: CBCharacteristic, from peripheral: CBPeripheral) {
 		let serviceText = char.service.map { Self.serviceName(for: $0.uuid) } ?? "Unknown Service"
 		let charText = Self.characteristicName(for: char.uuid, in: char.service?.uuid ?? CBUUID())
-		
+		let mtu = peripheral.maximumWriteValueLength(for: .withResponse)
+		print("[PeripheralSession] Characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString) - mtu = \(mtu)")
+
 		let key = CharKey(service: char.service?.uuid ?? CBUUID(), characteristic: char.uuid)
 		characteristics[key] = char
+
+		
+		if char.uuid == PeripheralSession.fifoL2CAPCharUUID {
+			peripheral.readValue(for: char)
+			print("[PeripheralSession] Subscribed to notifications for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
+		}
+
+		/// Only subscribe to notifications for notify-only characteristics
 		if char.properties.contains(.notify) {
 			peripheral.setNotifyValue(true, for: char)
 			print("[PeripheralSession] Subscribed to notifications for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
 		}
-		
 		if char.properties.contains(.read) {
 			peripheral.readValue(for: char)
-			//print("[PeripheralSession] Reading initial value for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
+		}
+	}
+	
+	func handlePSMCharacteristic(_ characteristic: CBCharacteristic) {
+		guard let value = characteristic.value else { return }
+		let psm: UInt16
+		if value.count == 2 {
+			psm = UInt16(value[0]) | (UInt16(value[1]) << 8)
+		} else if value.count == 1 {
+			psm = UInt16(value[0])
+		} else {
+			print("[PeripheralSession] Unexpected PSM value length: \(value.count)")
+			return
+		}
+		// Only attempt to open once per session
+		if l2capChannel == nil && !l2capOpenAttempted {
+			l2capOpenAttempted = true
+			print("[PeripheralSession] Attempting to open L2CAP channel with PSM: \(psm)")
+			peripheral.openL2CAPChannel(CBL2CAPPSM(psm))
+		} else if l2capChannel != nil {
+			print("[PeripheralSession] L2CAP channel already open")
+		} else {
+			print("[PeripheralSession] L2CAP open already attempted, waiting for result")
 		}
 	}
 	
@@ -276,12 +337,18 @@ extension PeripheralSession {
 				data.errorCode = value.first
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 			
-			/// FIFO Stream Status Char
+			/// FIFO Stream Char
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStreamCharUUID):
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 
 			/// FIFO Stream Status Char
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStatusCharUUID):
+				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
+			
+			///FIFO L2CAP
+			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoL2CAPCharUUID):
+				// Call handlePSMCharacteristic to open L2CAP channel
+				handlePSMCharacteristic(characteristic)
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 				
 			

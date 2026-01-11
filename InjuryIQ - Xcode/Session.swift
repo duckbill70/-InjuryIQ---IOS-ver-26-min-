@@ -87,8 +87,14 @@ final class Session {
 	///Location Manager
 	var locationManager = LocationManager()
 	
-	init() {
+	init(activityType: ActivityType = .running) {
+		
 		// ... other initializations ...
+		self.type = activityType
+		self.mlTrainingObject = (try? MLTrainingObject.load(type: activityType)) ?? MLTrainingObject(type: activityType)
+		
+		
+		
 		locationManager.onLocationsUpdate = { [weak self] newLocations in
 			guard let self = self, self.state == .running else { return }
 			for location in newLocations {
@@ -110,7 +116,7 @@ final class Session {
 			self.bleManager = manager
 	}
 	
-	private func sendCommandToDevices(_ value: UInt8) {
+	func sendCommandToDevices(_ value: UInt8) {
 		if let sessions = bleManager?.sessionsByPeripheral.values {
 			for device in sessions {
 				device.writeCommand(value)
@@ -122,7 +128,12 @@ final class Session {
 	func run() {
 		switch state {
 		case .stopped: //, .idle:
+			
+			///Setup the Session Log
 			logger.start(activity: activity.isEmpty ? "Session" : activity)
+			logger.append(kind: .note, metadata: [ "mlTrainingType": "\(mlTrainingObject.type)", "mlTrainingDetails": "\(mlTrainingObject)" ])
+			
+			
 			///PeripheralSessions
 			if let sessions = bleManager?.sessionsByPeripheral.values {
 				for device in sessions {
@@ -131,6 +142,7 @@ final class Session {
 			} else {
 				logger.append(kind: .note, metadata: ["devices": "No devices attached:" ])
 			}
+			
 			
 			///TODO(BLE): send "run" command
 			sendCommandToDevices(2) // cmd_state_running
@@ -190,6 +202,7 @@ final class Session {
 			///End state logging
 			logger.append(kind: .location, metadata: ["end_distance": "\(currentDistance)"])
 			logger.append(kind: .note, metadata: ["messsage": "duration: \(self.duration)"])
+			logger.append(kind: .note, metadata: [ "mlTrainingType": "\(mlTrainingObject.type)", "mlTrainingDetails": "\(mlTrainingObject)" ])
 			logger.stop(finalState: state.rawValue)
 			
 			///Reset Session

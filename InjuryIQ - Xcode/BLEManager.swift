@@ -419,6 +419,7 @@ extension BLEManager: CBPeripheralDelegate {
 			print("[BLEmanager] No value received for \(characteristic.uuid)")
 			return
 		}
+		
 		// Pass the value to the PeripheralSession
 		if let session = sessionsByPeripheral[peripheral.identifier] {
 			session.handleNotification(from: peripheral, for: characteristic, value: value)
@@ -441,6 +442,26 @@ extension BLEManager: CBPeripheralDelegate {
 			lastError = error.localizedDescription
 		} else {
 			print("[BLEManager] Successfully wrote to \(characteristic.uuid) for peripheral \(peripheral.identifier)")
+		}
+	}
+	
+	func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
+		if let session = sessionsByPeripheral[peripheral.identifier] {
+			if let error = error {
+				print("[PeripheralSession] Failed to open L2CAP channel: \(error)")
+				// Optionally: session.l2capOpenAttempted = false
+			} else if let channel = channel {
+				print("[PeripheralSession] L2CAP channel opened: \(channel)")
+				session.l2capChannel = channel
+				if let inputStream = channel.inputStream {
+					inputStream.delegate = session
+					inputStream.schedule(in: .main, forMode: .default)
+					inputStream.open()
+				}
+			}
+			sessionsByPeripheral[peripheral.identifier] = session
+		} else {
+			print("[BLEManager] No session found for peripheral \(peripheral.identifier)")
 		}
 	}
 	

@@ -94,7 +94,7 @@ extension ActivityType {
 		switch self {
 		case .running: return 0
 		case .hiking: return 0
-		case .racket: return 60
+		case .racket: return 3
 		case .cycling: return 0
 		}
 	}

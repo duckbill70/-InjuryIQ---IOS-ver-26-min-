@@ -33,7 +33,7 @@ final class SnapshotSchedulerDistance {
 	func tick(currentDistance: Double) {
 		guard let session = session,
 			  session.state == .running,
-			  session.mlTrainingObject.active,
+			  !session.mlTrainingObject.active,
 			  let interval = snapshotDistanceInterval else { return }
 
 		let totalDistance = Double(session.mlTrainingObject.distnace)

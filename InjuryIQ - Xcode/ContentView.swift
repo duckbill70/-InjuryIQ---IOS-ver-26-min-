@@ -140,6 +140,7 @@ struct ContentView: View {
 				print("[ContentView] Attached BLE to view modelContext")
 			}
 			session.attach(modelContext: modelContext)
+			session.type = sports.selectedActivity
 			BLEManager.shared.attachSession(session)
 			session.locationManager.requestAuthorization()
 			

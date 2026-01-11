@@ -32,11 +32,12 @@ final class SnapshotSchedulerDuration {
     func tick(currentDuration: TimeInterval) {
         guard let session = session,
 			session.state == .running,
-			session.mlTrainingObject.active, // <-- Only proceed if active
+			!session.mlTrainingObject.active, // <-- Only proceed if active
 			let interval = snapshotInterval,
 			let nextTime = nextSnapshotTime else { return }
         if currentDuration >= nextTime {
 			session.logger.append(kind: .bleCommand, metadata: ["snapshot": "Requested at \(Int(currentDuration))s"])
+			session.sendCommandToDevices(4)
             print("[SnapshotScheduler] Snapshot request at \(Int(currentDuration))s")
             nextSnapshotTime = nextTime + interval
         }
