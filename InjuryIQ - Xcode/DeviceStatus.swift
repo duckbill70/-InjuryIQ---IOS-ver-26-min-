@@ -85,6 +85,7 @@ struct BLEDevice: Identifiable {
 	var rssi: Int                 // typically ~ -100 ... -30 dBm
 	var hz: Double                // sampling rate
 	var side: DeviceSide          // 0 = Left, 1 = Right
+	var fifoStats: FIFOStatusPayload?
 	
 	// Utility mappings
 	var batterySymbolName: String {
@@ -124,6 +125,29 @@ struct StatusIcon: View {
 		.frame(width: 36, height: 36)
 		.accessibilityLabel(status == .device_running ? "Run" : "Stop")
 	}
+}
+
+///Fifo Stats Struct
+struct FIFOStatusView: View {
+let stats: FIFOStatusPayload
+   var body: some View {
+	   VStack(alignment: .leading, spacing: 4) {
+		   Text("FIFO Status").font(.headline)
+		   Text("Samples Stored: \(stats.samplesStored)")
+		   Text("Samples Dropped: \(stats.samplesDropped)")
+		   Text("Total Captured: \(stats.totalCaptured)")
+		   Text("Memory Used: \(stats.memoryUsedBytes) bytes")
+		   Text("Buffer Capacity: \(stats.bufferCapacity)")
+		   Text("Duration: \(stats.recordingDurationMs) ms")
+		   Text("Actual Rate: \(stats.actualSampleRateHz) Hz")
+		   Text("Configured Rate: \(stats.configuredRateHz) Hz")
+		   Text("Recording: \(stats.isRecording == 1 ? "Yes" : "No")")
+		   Text("Full: \(stats.isFull == 1 ? "Yes" : "No")")
+	   }
+	   .font(.subheadline)
+	   .padding()
+	   .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemGray6)))
+   }
 }
 
 /// Compact 0...4 signal bars

@@ -29,6 +29,13 @@ struct MLTrainingStatusButton: View {
 					.foregroundColor(.white)
 			))
 		}
+		// Always Add seesions of Sessions
+		result.append(AnyView(
+			Text("\(Int(mlObject.sessions.count))/\(Int(mlObject.sets))")
+				.font(.system(size: 16, weight: .semibold))
+				.frame(width: 56, height: 56)
+				.foregroundColor(.white)
+		))
 		// Always add sparkles as a page
 		result.append(AnyView(
 			Image(systemName: "sparkles")
@@ -73,15 +80,16 @@ struct MLTrainingStatusButton: View {
 				)
 				.contentShape(Circle())
 			}
-			if mlObject.sets > 0 {
-				Text("\(mlObject.sessions.count)")
-					.font(.caption2)
-					.foregroundColor(.white)
-					.padding(6)
-					.background(mlObject.sessions.count == mlObject.sets ? Color.green : Color.red)
-					.clipShape(Circle())
-					.offset(x: 0, y: -10)
-			}
+			///Notification Dot
+			//if mlObject.sets > 0 {
+			//	Text("\(mlObject.sessions.count)")
+			//		.font(.caption2)
+			//		.foregroundColor(.white)
+			//		.padding(6)
+			//		.background(mlObject.sessions.count == mlObject.sets ? Color.green : Color.red)
+			//		.clipShape(Circle())
+			//		.offset(x: 0, y: -10)
+			//}
 		}
 		.onAppear {
 			startTimer()

@@ -138,6 +138,7 @@ final class Session {
 			if let sessions = bleManager?.sessionsByPeripheral.values {
 				for device in sessions {
 					logger.append(kind: .note, metadata: ["devices": "\(device.data.localName ?? "Unknown")"])
+					logger.append(kind: .note, metadata: ["location": "\(device.data.location?.displayName ?? "Unknown") for peripheral \(device.data.localName ?? "Unknown")"] )
 				}
 			} else {
 				logger.append(kind: .note, metadata: ["devices": "No devices attached:" ])

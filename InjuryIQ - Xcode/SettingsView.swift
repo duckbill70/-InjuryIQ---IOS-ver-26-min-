@@ -30,9 +30,14 @@ struct SettingsView: View {
 							VStack(alignment: .leading) {
 								HStack {
 									Text(kd.name)
-									Image(systemName: "circle.fill")
-										.foregroundColor(isDeviceConnected(kd.uuid) ? .blue : .gray)
 										.font(.caption)
+									Image(systemName: "circle.fill")
+										.foregroundColor(
+											isDeviceConnected(kd.uuid) ? .blue :
+											isDeviceDiscovered(kd.uuid) ? .green :
+											.gray
+										)
+										
 									Spacer()
 									Text(
 										kd.lastConnectedAt.formatted(
@@ -98,6 +103,10 @@ struct SettingsView: View {
 
 	private func isDeviceConnected(_ uuid: UUID) -> Bool {
 		ble.connectedPeripherals.contains { $0.identifier == uuid }
+	}
+	
+	private func isDeviceDiscovered(_ uuid: UUID) -> Bool {
+		return ble.discovered.contains { $0.id == uuid }
 	}
 
 	private func handleConnectDisconnect(_ kd: KnownDevice) {

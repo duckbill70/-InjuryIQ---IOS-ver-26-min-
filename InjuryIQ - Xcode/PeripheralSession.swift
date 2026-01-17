@@ -10,6 +10,32 @@ import CoreBluetooth
 import Combine
 import SwiftUI
 
+struct FIFOStatusPayload {
+	let samplesStored: UInt32
+	let samplesDropped: UInt32
+	let totalCaptured: UInt32
+	let memoryUsedBytes: UInt32
+	let bufferCapacity: UInt32
+	let recordingDurationMs: UInt32
+	let actualSampleRateHz: UInt16
+	let configuredRateHz: UInt16
+	let isRecording: UInt8
+	let isFull: UInt8
+
+	init?(data: Data) {
+		guard data.count >= 30 else { return nil }
+		samplesStored        = data.subdata(in: 0..<4).withUnsafeBytes { $0.load(as: UInt32.self) }
+		samplesDropped       = data.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
+		totalCaptured        = data.subdata(in: 8..<12).withUnsafeBytes { $0.load(as: UInt32.self) }
+		memoryUsedBytes      = data.subdata(in: 12..<16).withUnsafeBytes { $0.load(as: UInt32.self) }
+		bufferCapacity       = data.subdata(in: 16..<20).withUnsafeBytes { $0.load(as: UInt32.self) }
+		recordingDurationMs  = data.subdata(in: 20..<24).withUnsafeBytes { $0.load(as: UInt32.self) }
+		actualSampleRateHz   = data.subdata(in: 24..<26).withUnsafeBytes { $0.load(as: UInt16.self) }
+		configuredRateHz     = data.subdata(in: 26..<28).withUnsafeBytes { $0.load(as: UInt16.self) }
+		isRecording          = data[28]
+		isFull               = data[29]
+	}
+}
 
 struct CharKey: Hashable {
 	let service: CBUUID
@@ -40,12 +66,30 @@ enum CommandState: UInt8 {
 	case unknown 			= 0xFF
 }
 
+enum Location: String, CaseIterable, Identifiable {
+	case rightfoot
+	case leftfoot
+	case righthand
+	case lefthand
+
+	var id: String { rawValue }
+
+	var displayName: String {
+		switch self {
+		case .rightfoot: return "Right Foot"
+		case .leftfoot: return "Left Foot"
+		case .lefthand: return "Left Hand"
+		case .righthand: return "Right Hand"
+		}
+	}
+}
+
 struct PeripheralData {
 	
 	var localName		: String?
 	var batteryLevel	: UInt8?
 	var command			: CommandState?
-	var location		: UInt8?
+	var location		: Location?
 	// Add more fields as needed for other characteristic values
 	
 	var errorCode		: UInt8?
@@ -53,6 +97,8 @@ struct PeripheralData {
 	var fatigue			: UInt8?
 	var sampleRate		: UInt16?
 	var rssi			: Int?
+	
+	var fifoStats		: FIFOStatusPayload?
 	
 	var commandState: CommandState {
 		return command ?? .unknown
@@ -75,20 +121,21 @@ struct PeripheralData {
 	
 }
 
-extension PeripheralData {
-	var locationColor: Color {
-		switch location {
-		case nil: return .clear      // none
-		case 0x00: return .red       // 0x00
-		case 0x01: return .green     // 0x01
-		default: return .gray        // unexpected values
-		}
-	}
-}
+//extension PeripheralData {
+//	var locationColor: Color {
+//		switch location {
+//		case nil: return .clear      // none
+//		case 0x00: return .red       // 0x00
+//		case 0x01: return .green     // 0x01
+//		default: return .gray        // unexpected values
+//		}
+//	}
+//}
 
 class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	
 	let peripheral: CBPeripheral
+	weak var session: Session?
 	
 	///lccap channel management
 	var l2capChannel: CBL2CAPChannel?
@@ -212,6 +259,23 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 extension PeripheralSession: Identifiable {
 	var id: UUID {
 		peripheral.identifier
+	}
+}
+
+extension PeripheralSession {
+	var location: Location? {
+		get { data.location }
+		set {
+			let oldValue = data.location
+			data.location = newValue
+			if oldValue != newValue {
+				print("[PeripheralSession] Location changed from \(oldValue?.displayName ?? "nil") to \(newValue?.displayName ?? "nil") for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
+				session?.logger.append(
+					kind: .location,
+					metadata: ["location": "\(data.localName ?? "unknown") location \(newValue?.displayName ?? "nil") for peripheral \(data.localName ?? peripheral.identifier.uuidString)"]
+				)
+			}
+		}
 	}
 }
 
@@ -343,7 +407,12 @@ extension PeripheralSession {
 
 			/// FIFO Stream Status Char
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStatusCharUUID):
-				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
+				if let status = FIFOStatusPayload(data: value) {
+					//print("[PeripheralSession] FIFOStatus: \(status)")
+					data.fifoStats = status
+				} else {
+					print("[PeripheralSession] Invalid FIFOStatus payload")
+				}
 			
 			///FIFO L2CAP
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoL2CAPCharUUID):

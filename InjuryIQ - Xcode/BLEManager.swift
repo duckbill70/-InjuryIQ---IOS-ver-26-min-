@@ -315,6 +315,7 @@ extension BLEManager: CBCentralManagerDelegate {
 		// Create session on connection
 		if sessionsByPeripheral[uuid] == nil {
 			let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: localName)
+			session.session = self.session
 			sessionsByPeripheral[uuid] = session
 		}
 	

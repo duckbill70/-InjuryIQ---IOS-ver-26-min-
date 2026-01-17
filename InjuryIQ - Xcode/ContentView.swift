@@ -7,6 +7,7 @@
 
 import SwiftData
 import SwiftUI
+import CoreBluetooth
 
 
 struct ContentView: View {
@@ -33,17 +34,14 @@ struct ContentView: View {
 					
 					Spacer()
 					
-					let sessions = Array(ble.sessionsByPeripheral.values)
-					let leftSession = sessions[safe: 0]
-					let rightSession = sessions[safe: 1]
+					let leftFootSession = ble.sessionsByPeripheral.values.first(where: { $0.location == .leftfoot })
+					let rightFootSession = ble.sessionsByPeripheral.values.first(where: { $0.location == .rightfoot })
 
 					SessionStatusIndicator(
-						leftFatiguePct: leftSession?.data.fatiguePercent
-							.map(Double.init),
-						rightFatiguePct: rightSession?.data.fatiguePercent
-							.map(Double.init),
-						leftConnected: sessions.indices.contains(0),
-						rightConnected: sessions.indices.contains(1),
+						leftFatiguePct: leftFootSession?.data.fatiguePercent.map(Double .init),
+						rightFatiguePct: rightFootSession?.data.fatiguePercent.map(Double .init),
+						leftConnected: ble.connectedPeripherals.contains { $0.identifier == leftFootSession?.peripheral.identifier },
+						rightConnected: ble.connectedPeripherals.contains { $0.identifier == rightFootSession?.peripheral.identifier },
 						duration: session.duration,
 						distance: session.locationManager.totalDistance / 1000, // for kilometers,
 						speed: session.currentSpeedKmph,
@@ -54,57 +52,22 @@ struct ContentView: View {
 					.frame(width: 320)
 					.padding()
 
-					ZStack {
-						HStack {
-							Spacer()
-							MLTrainingStatusButton(
-								sports: sports,
-								mlObject: mlObject
-							)
-							.padding(.horizontal)
-						}
+					HStack {
+						DummyButton()
+						Spacer()
 						SessionControlButton(
 							selectedActivity: sports.selectedActivity.rawValue
 						)
-						.padding(.horizontal)
+						Spacer()
+						MLTrainingStatusButton(
+							sports: sports,
+							mlObject: mlObject
+						)
 					}
+					.padding(.horizontal)
 					
 					Spacer()
-					
-					let a = BLEDevice(
-						name: leftSession?.data.localName ?? "StingRay A???",
-						status: DeviceStatus(
-							from: leftSession?.data.commandState ?? .unknown
-						),
-						batteryPercent: leftSession?.data.batteryPercent ?? 0,
-						rssi: Int(leftSession?.data.rssi ?? 0),
-						hz: Double(leftSession?.data.sampleRate ?? 0),
-						side: leftSession?.data.location
-							.flatMap { DeviceSide(rawValue: Int($0))
-							} ?? .unknown
-					)
-					
-					let b = BLEDevice(
-						name: rightSession?.data.localName ?? "StingRay B???",
-						status: DeviceStatus(
-							from: rightSession?.data.commandState ?? .unknown
-						),
-						batteryPercent: rightSession?.data.batteryPercent ?? 0,
-						rssi: Int(rightSession?.data.rssi ?? 0),
-						hz: Double(rightSession?.data.sampleRate ?? 0),
-						side: rightSession?.data.location
-							.flatMap { DeviceSide(rawValue: Int($0))
-							} ?? .unknown
-					)
-				   
-					Group {
-						HStack(spacing: 16) {
-							DeviceCard(device: a)
-							DeviceCard(device: b)
-						}
-						.padding()
-
-					}
+					DeviceManager(ble: ble)
 					
 				}
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
