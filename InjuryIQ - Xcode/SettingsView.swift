@@ -4,7 +4,7 @@ import SwiftUI
 
 struct SettingsView: View {
 	@EnvironmentObject private var ble: BLEManager
-	@Environment(\.modelContext) private var modelContext
+	@Environment(\.modelContext) var modelContext
 	@Query(sort: \KnownDevice.lastConnectedAt, order: .reverse) private
 		var knownDevices: [KnownDevice]
 

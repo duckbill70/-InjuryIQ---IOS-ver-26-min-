@@ -8,16 +8,16 @@ import SwiftUI
 
 
 struct DummyButton: View {
-	@Environment(Session.self) private var session
+	@Environment(Session.self) var session
 
-	private let size: CGFloat = 56
+	private let size: CGFloat = 70
 
 	var body: some View {
 		Button {
 			session.stop()
 		} label: {
 			Image(systemName: "lock.slash.fill")
-				.font(.system(size: 22, weight: .semibold))
+				.font(.system(size: 26, weight: .semibold))
 				.frame(width: size, height: size)
 				.background(
 					Circle().fill(Color.gray.opacity(0.18))

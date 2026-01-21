@@ -1,44 +1,81 @@
+//
+//  MLTrainingExport.swift
+//  InjuryIQ - Xcode
+//
+//  Created by Platts Andrew on 21/01/2026.
+//
 import Foundation
 
 struct MLTrainingExport: Encodable {
-    let sport: String
-    let sets: Int
-    let duration: Int
-    var sessions: [[String: Any]]
+	
+	struct ExportDataPoint: Encodable {
+		let time: TimeInterval
+		let accX: Double
+		let accY: Double
+		let accZ: Double
+		let magX: Double
+		let magY: Double
+		let magZ: Double
+	}
 
-    init(from obj: MLTrainingObject) {
-        self.sport = obj.type.rawValue
-        self.sets = obj.sets
-        self.duration = obj.setDuration
+	struct ExportSession: Encodable {
+		let id: UUID
+		let dataPoints: [ExportDataPoint]
+	}
 
-        // Flatten all sessions from all locations
-        var sessionList: [[String: Any]] = []
-        for (_, sessionArray) in obj.sessions {
-            for session in sessionArray {
-                let points = session.dataPoints.map { point in
-                    [
-                        "time": point.timestamp,
-                        "accX": point.accl.x,
-                        "accY": point.accl.y,
-                        "accZ": point.accl.z
-                    ]
-                }
-                sessionList.append(["session": points])
-            }
-        }
-        self.sessions = sessionList
-    }
+	struct ExportLocation: Encodable {
+		let name: String
+		let sessions: [ExportSession]
+	}
 
-    func toJSONData() throws -> Data {
-        // Build the required dictionary
-        var dict: [String: Any] = [
-            "sport": sport,
-            "sets": sets,
-            "duration": duration
-        ]
-        for (index, session) in sessions.enumerated() {
-            dict["session\(index + 1)"] = session["session"]
-        }
-        return try JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted)
-    }
+	let locations: [ExportLocation]
+	
+	struct Header: Encodable {
+			let uuid: UUID
+			let sport: String
+			let sets: Int
+			let duration: Int
+			let distance: Int
+		}
+
+		let header: Header
+
+	init(from obj: MLTrainingObject) {
+		
+		self.header = Header(
+			uuid: obj.uuid,
+			sport: obj.type.rawValue,
+			sets: obj.sets,
+			duration: obj.setDuration,
+			distance: obj.distance
+		)
+
+		self.locations = obj.sessions.map { (location, sessionArray) in
+			ExportLocation(
+				name: location.displayName,
+				sessions: sessionArray.map { session in
+					ExportSession(
+						id: session.id,
+						dataPoints: session.dataPoints.map { point in
+							ExportDataPoint(
+								time: point.timestamp,
+								accX: point.accl.x,
+								accY: point.accl.y,
+								accZ: point.accl.z,
+								magX: point.mag.x,
+								magY: point.mag.y,
+								magZ: point.mag.z
+							)
+						}
+					)
+				}
+			)
+		}
+	}
+
+	func toJSONData() throws -> Data {
+		let encoder = JSONEncoder()
+		encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+		return try encoder.encode(self)
+	}
 }

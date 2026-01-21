@@ -12,7 +12,7 @@ import CoreBluetooth
 
 struct KnownDiscoveredDevicesView: View {
     @ObservedObject var ble: BLEManager
-	@Environment(\.modelContext) private var modelContext
+	@Environment(\.modelContext) var modelContext
 	@Query(sort: \KnownDevice.lastConnectedAt, order: .reverse) private var knownDevices: [KnownDevice]
 
     var body: some View {
@@ -40,7 +40,7 @@ struct KnownDiscoveredDevicesView: View {
                 }
 				
 				let empty = max(0, 4 - knownDevices.count)
-				let symbolSet: [String] = ["cloud.bolt.rain.fill", "sun.rain.fill", "moon.stars.fill", "moon.fill"]
+				//let symbolSet: [String] = ["cloud.bolt.rain.fill", "sun.rain.fill", "moon.stars.fill", "moon.fill"]
 				ForEach(0..<empty, id: \.self) { _ in
 					Button(action: { /* action */ }) {
 						Text("ABCD")

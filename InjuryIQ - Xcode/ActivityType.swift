@@ -16,6 +16,11 @@ public enum ActivityType: String, Codable, CaseIterable {
 	case cycling = "Cycling"
 }
 
+public enum MLTrainingType {
+	case distance
+	case duration
+}
+
 struct ActivityButton: Identifiable {
 	let id = UUID()
 	let type: ActivityType
@@ -72,16 +77,25 @@ extension ActivityType {
 		}
 	}
 	
+	var activityColor: Color {
+		switch self {
+		case .running: return .indigo
+		case .hiking: return .black
+		case .racket: return .mint
+		case .cycling: return .red
+		}
+	}
+	
 	var mlDistance: Int {
 		switch self {
 		case .running: return 1
-		case .hiking: return 3
+		case .hiking: return 0
 		case .racket: return 0
 		case .cycling: return 10
 		}
 	}
 	
-	var mlSests: Int {
+	var mlSets: Int {
 		switch self {
 		case .running: return 3
 		case .hiking: return 3
@@ -90,12 +104,30 @@ extension ActivityType {
 		}
 	}
 	
-	var mlDurartion: Int {
+	var mlDuration: Int {
 		switch self {
 		case .running: return 0
-		case .hiking: return 0
-		case .racket: return 3
+		case .hiking: return 3
+		case .racket: return 30
 		case .cycling: return 0
+		}
+	}
+	
+	var mltype: MLTrainingType {
+		switch self {
+		case .running: return .distance
+		case .hiking: return .duration
+		case .racket: return .duration
+		case .cycling: return .distance
+		}
+	}
+	
+	var mlLocations: [Location] {
+		switch self {
+			case .running: return [Location.leftfoot, Location.rightfoot]
+			case .hiking: return [Location.leftfoot, Location.rightfoot]
+			case .racket: return [Location.leftfoot, Location.rightfoot] ///Furture are left and right hands
+			case .cycling: return [Location.leftfoot, Location.rightfoot]
 		}
 	}
 	

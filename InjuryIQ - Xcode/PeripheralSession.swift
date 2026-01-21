@@ -66,7 +66,7 @@ enum CommandState: UInt8 {
 	case unknown 			= 0xFF
 }
 
-enum Location: String, CaseIterable, Identifiable {
+enum Location: String, CaseIterable, Identifiable, Codable {
 	case rightfoot
 	case leftfoot
 	case righthand
@@ -82,6 +82,30 @@ enum Location: String, CaseIterable, Identifiable {
 		case .righthand: return "Right Hand"
 		}
 	}
+	
+	var iconView: some View {
+		let image: Image
+		let flip: Bool
+
+		switch self {
+		case .rightfoot:
+			image = Image(systemName: "shoe.fill")
+			flip = false
+		case .leftfoot:
+			image = Image(systemName: "shoe.fill")
+			flip = true
+		case .lefthand:
+			image = Image(systemName: "hand.raised.fill")
+			flip = true
+		case .righthand:
+			image = Image(systemName: "hand.raised.fill")
+			flip = false
+		}
+
+		return image
+			.scaleEffect(x: flip ? -1 : 1, y: 1)
+	}
+	
 }
 
 struct PeripheralData {
@@ -165,6 +189,20 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	static let batteryServiceUUID = CBUUID(string: "180F") // Standard UUID for
 	static let batteryCharUUID    = CBUUID(string: "2A19") // Standard UUID for Battery Level Characteristic
 	
+	///Data Buffer
+	private var l2capDataBuffer = Data()
+	
+	private struct IMUSample {
+		let position: UInt32
+		let timestamp_ms: UInt32
+		let accel_x: Float
+		let accel_y: Float
+		let accel_z: Float
+		let gyro_x: Float
+		let gyro_y: Float
+		let gyro_z: Float
+	}
+	
 
 	init(peripheral: CBPeripheral, characteristics: [CharKey: CBCharacteristic], localName: String? = nil) {
 		self.peripheral = peripheral
@@ -180,27 +218,91 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	
 	///Stream Delegate:
 	func stream(_ aStream: Stream, handle eventCode: Stream.Event) {
-			switch eventCode {
-			case .hasBytesAvailable:
-				if let inputStream = aStream as? InputStream {
-					var buffer = [UInt8](repeating: 0, count: 1024)
-					while inputStream.hasBytesAvailable {
-						let bytesRead = inputStream.read(&buffer, maxLength: buffer.count)
-						if bytesRead > 0 {
-							let data = Data(buffer.prefix(bytesRead))
-							
-							///Next STEPS HERE!!!!!!!!!!!!!!!
-							//print("[PeripheralSession] Received L2CAP data: \(data as NSData)")
-							// Process data as needed
+		switch eventCode {
+		case .hasBytesAvailable:
+			if let inputStream = aStream as? InputStream {
+				var buffer = [UInt8](repeating: 0, count: 4096)
+				while inputStream.hasBytesAvailable {
+					let bytesRead = inputStream.read(&buffer, maxLength: buffer.count)
+					if bytesRead > 0 {
+						l2capDataBuffer.append(buffer, count: bytesRead)
+						
+						// Check if we have at least the header
+						if l2capDataBuffer.count >= 8 {
+							let totalBytes = l2capDataBuffer.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) }
+							let expectedLength = 8 + Int(totalBytes)
+							if l2capDataBuffer.count >= expectedLength {
+								// Full stream received
+								if let samples = decodeCoCStream(data: l2capDataBuffer) {
+									saveIMUSamplesToMLTrainingObject(samples: samples)
+								}
+								l2capDataBuffer.removeAll()
+							}
 						}
 					}
 				}
-			case .endEncountered, .errorOccurred:
-				print("[PeripheralSession] L2CAP input stream closed or error")
-			default:
-				break
+			}
+		case .endEncountered, .errorOccurred:
+			print("[PeripheralSession] L2CAP input stream closed or error")
+			l2capDataBuffer.removeAll()
+		default:
+			break
+		}
+	}
+	
+	///Decode Function
+	private func decodeCoCStream(data: Data) -> [IMUSample]? {
+		guard data.count >= 8 else { return nil }
+		let totalBytes = data.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) }
+		let totalSamples = data.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt16.self) }
+		let payloadData = data.subdata(in: 8..<data.count)
+		guard payloadData.count == Int(totalBytes) else { return nil }
+		var samples: [IMUSample] = []
+		let entrySize = 32
+		for i in 0..<Int(totalSamples) {
+			let offset = i * entrySize
+			guard offset + entrySize <= payloadData.count else { break }
+			let entryData = payloadData.subdata(in: offset..<(offset + entrySize))
+			let sample = IMUSample(
+				position: entryData.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) },
+				timestamp_ms: entryData.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt32.self) },
+				accel_x: entryData.withUnsafeBytes { $0.load(fromByteOffset: 8, as: Float.self) },
+				accel_y: entryData.withUnsafeBytes { $0.load(fromByteOffset: 12, as: Float.self) },
+				accel_z: entryData.withUnsafeBytes { $0.load(fromByteOffset: 16, as: Float.self) },
+				gyro_x: entryData.withUnsafeBytes { $0.load(fromByteOffset: 20, as: Float.self) },
+				gyro_y: entryData.withUnsafeBytes { $0.load(fromByteOffset: 24, as: Float.self) },
+				gyro_z: entryData.withUnsafeBytes { $0.load(fromByteOffset: 28, as: Float.self) }
+			)
+			samples.append(sample)
+		}
+		return samples
+	}
+	
+	///Save IMU Object to MLSession
+	@MainActor
+	private func saveIMUSamplesToMLTrainingObject(samples: [IMUSample]) {
+		guard let session = self.session, let location = self.location else { return }
+		let dataPoints = samples.map { sample in
+			MLDataPoint(
+				timestamp: TimeInterval(sample.timestamp_ms) / 1000.0,
+				accl: Accl(x: Double(sample.accel_x), y: Double(sample.accel_y), z: Double(sample.accel_z)),
+				mag: Mag(x: Double(sample.gyro_x), y: Double(sample.gyro_y), z: Double(sample.gyro_z))
+			)
+		}
+		print("[DEBUG] saveIMUSamplesToMLTrainingObject called: samples.count = \(samples.count), location = \(location.displayName)")
+
+		if let jsonData = try? JSONEncoder().encode(dataPoints) {
+			let mlSession = mlTrainingSession(id: UUID(), data: jsonData)
+			if session.mlTrainingObject.canAddSession(for: location) {
+				session.mlTrainingObject.addSession(mlSession, for: location)
+				try? session.mlTrainingObject.save()
+				print("[PeripheralSession] Saved \(dataPoints.count) IMU samples to MLTrainingObject for \(location.displayName)")
+			} else {
+				print("[PeripheralSession] Maximum number of sessions (\(session.mlTrainingObject.sets)) reached for \(location.displayName); snapshot ignored.")
 			}
 		}
+	}
+	
 	
 	// Method to update RSSI
 	func updateRSSI(_ rssi: Int) {

@@ -152,11 +152,17 @@ final class Session {
 			duration = 0
 			
 			///MLTrainign for timer based functions
-			if snapshotSchedulerDuration == nil { snapshotSchedulerDuration = SnapshotSchedulerDuration(session: self) }
-			snapshotSchedulerDuration?.reset()
-			
-			if snapshotSchedulerDistance == nil { snapshotSchedulerDistance = SnapshotSchedulerDistance(session: self) }
-			snapshotSchedulerDistance?.reset()
+			if mlTrainingObject.distance > 0 {
+				if snapshotSchedulerDistance == nil { snapshotSchedulerDistance = SnapshotSchedulerDistance(session: self) }
+				snapshotSchedulerDistance?.reset()
+				snapshotSchedulerDuration = nil
+				print("[snapshotSchedulerDuration] In Use")
+			} else {
+				if snapshotSchedulerDuration == nil { snapshotSchedulerDuration = SnapshotSchedulerDuration(session: self) }
+				snapshotSchedulerDuration?.reset()
+				snapshotSchedulerDistance = nil
+				print("[SnapshotSchedulerDistance] In Use")
+			}
 			
 			startTimer()
 			
@@ -206,6 +212,8 @@ final class Session {
 			logger.append(kind: .note, metadata: [ "mlTrainingType": "\(mlTrainingObject.type)", "mlTrainingDetails": "\(mlTrainingObject)" ])
 			logger.stop(finalState: state.rawValue)
 			
+			
+			
 			///Reset Session
 			duration = 0
 			locationManager.locations.removeAll() // Reset distance
@@ -219,8 +227,12 @@ final class Session {
 		timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
 			guard let self = self else { return }
 			self.duration += 1
-			self.snapshotSchedulerDuration?.tick(currentDuration: self.duration)
-			self.snapshotSchedulerDistance?.tick(currentDistance: self.currentDistance)
+			// Only tick the relevant scheduler
+			if self.mlTrainingObject.distance > 0 {
+				self.snapshotSchedulerDistance?.tick(currentDistance: self.currentDistance)
+			} else {
+				self.snapshotSchedulerDuration?.tick(currentDuration: self.duration)
+			}
 		}
 	}
 
@@ -271,10 +283,10 @@ public extension SessionState {
 
 // MARK: - Split controls: Run/Pause and Stop (icon-only circular buttons)
 struct RunPauseButton: View {
-	@Environment(Session.self) private var session
+	@Environment(Session.self) var session
 	var selectedActivity: String
 
-	private let size: CGFloat = 56
+	private let size: CGFloat = 70
 
 	var body: some View {
 		Button {
@@ -286,7 +298,7 @@ struct RunPauseButton: View {
 			}
 		} label: {
 			Image(systemName: session.state.runPauseIcon)
-				.font(.system(size: 22, weight: .semibold))
+				.font(.system(size: 26, weight: .semibold))
 				.frame(width: size, height: size)
 				.background(
 					Circle().fill(session.state.runPauseColor.opacity(0.18))
@@ -303,16 +315,16 @@ struct RunPauseButton: View {
 }
 
 struct StopButton: View {
-	@Environment(Session.self) private var session
+	@Environment(Session.self) var session
 
-	private let size: CGFloat = 56
+	private let size: CGFloat = 70
 
 	var body: some View {
 		Button {
 			session.stop()
 		} label: {
 			Image(systemName: session.state.stopIcon)
-				.font(.system(size: 22, weight: .semibold))
+				.font(.system(size: 26, weight: .semibold))
 				.frame(width: size, height: size)
 				.background(
 					Circle().fill(session.state.stopColor.opacity(0.18))

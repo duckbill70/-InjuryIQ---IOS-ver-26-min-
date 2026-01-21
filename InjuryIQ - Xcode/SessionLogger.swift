@@ -18,7 +18,7 @@ final class SessionLogger {
 	private(set) var events: [SessionEvent] = []
 	private var activityName: String = "Unknown"
 
-	private var modelContext: ModelContext?
+	var modelContext: ModelContext?
 
 	init(modelContext: ModelContext? = nil) {
 		self.modelContext = modelContext

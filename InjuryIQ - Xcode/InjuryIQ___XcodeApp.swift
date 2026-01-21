@@ -12,14 +12,14 @@ struct InjuryIQApp: App {
     private var showLaunch: Bool = true
     @State private var showLaunchState: Bool = true
 	
-	@Environment(\.modelContext) private var modelContext
+	@Environment(\.modelContext) var modelContext
 	//@Environment(Session.self) private var session
 	
 	@State private var sports = Sports()
-	@State private var session = Session() // Injected via environment
+	@State var session = Session() // Injected via environment
     
     private let fallbackContainer: ModelContainer = {
-        let schema = Schema([Item.self, KnownDevice.self])
+		let schema = Schema([Item.self, KnownDevice.self, SessionRecord.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         return try! ModelContainer(for: schema, configurations: [config])
     }()
@@ -28,6 +28,7 @@ struct InjuryIQApp: App {
         self.modelContainer = initializeContainer()
         if self.modelContainer != nil {
             BLEManager.shared.attach(modelContext: self.modelContainer!.mainContext)
+			session.attach(modelContext: self.modelContainer!.mainContext)
         } else {
             BLEManager.shared.attach(modelContext: ModelContext(fallbackContainer))
         }

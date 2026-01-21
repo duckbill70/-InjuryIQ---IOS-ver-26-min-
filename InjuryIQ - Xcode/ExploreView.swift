@@ -6,7 +6,7 @@ import SwiftData
 struct ExploreView: View {
 	
     @EnvironmentObject private var ble: BLEManager
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) var modelContext
     @Query(sort: \SessionRecord.startedAt, order: .reverse) private var sessionRecords: [SessionRecord]
 
     var body: some View {
@@ -178,9 +178,15 @@ private struct SessionRow: View {
 				Label("View", systemImage: "eye")
 			}
 			.tint(.blue)
+			Spacer()
+			if let shareText = record.shareableText {
+				ShareLink(item: shareText) {
+					Image(systemName: "square.and.arrow.up")
+				}
+			}
 		}
 		// Right swipe: Delete
-		.swipeActions(edge: .trailing, allowsFullSwipe: true) {
+		.swipeActions(edge: .trailing, allowsFullSwipe: false) {
 			if let onDelete {
 				Button(role: .destructive) {
 					onDelete()

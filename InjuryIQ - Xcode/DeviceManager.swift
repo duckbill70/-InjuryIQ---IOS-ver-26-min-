@@ -16,7 +16,7 @@ extension CommandState {
 		case .cmd_state_off: return "powersleep"
 		case .cmd_state_idle: return "stop.fill"
 		case .cmd_state_running: return "play.fill"
-		case .cmd_state_location: return "location.fill"
+		case .cmd_state_location: return "dot.scope" //"location.fill"
 		case .cmd_state_snapshot: return "recordingtape"
 		case .unknown: return "questionmark"
 		}
@@ -99,12 +99,14 @@ enum BatteryState: CaseIterable {
 struct DeviceManager: View {
 	
 	@ObservedObject var ble: BLEManager
-	@Environment(Session.self) private var session
-	@Environment(\.modelContext) private var modelContext
+	@Environment(Session.self) var session
+	@Environment(\.modelContext) var modelContext
 	
 	@Query(sort: \KnownDevice.lastConnectedAt, order: .reverse) private var knownDevices: [KnownDevice]
 	
 	@State private var boxes: [KnownDevice?] = []
+	
+	
 	@State private var draggingIndex: Int? = nil
 	@GestureState private var dragOffset: CGSize = .zero
 	@State private var lastKnownCommandStates: [UUID: CommandState] = [:]
@@ -114,9 +116,13 @@ struct DeviceManager: View {
 	var body: some View {
 		deviceBoxesView
 			.onAppear {
-				initializeBoxes()
+				if boxes.isEmpty {
+					initializeBoxes()
+				}
 				updateBoxes()
-				ble.startScan()
+				if !ble.isScanning && ble.connectedPeripherals.isEmpty {
+					ble.startScan()
+				}
 			}
 			.onChange(of: knownDevices) { _, _ in updateBoxes() }
 			.onChange(of: ble.sessionsByPeripheral) { _, _ in updateBoxes() }
@@ -217,7 +223,7 @@ struct DeviceManager: View {
 	}
 
 	// Remove the boxes assignment from updateBoxes()
-	private func updateBoxes() {
+	private func OLDupdateBoxes() {
 		// Do NOT reassign boxes here!
 		// Only update locations to ensure uniqueness
 		var locationToDevice: [Location: UUID] = [:]
@@ -230,6 +236,28 @@ struct DeviceManager: View {
 		}
 		for (uuid, session) in ble.sessionsByPeripheral {
 			if let loc = session.location, locationToDevice[loc] != uuid {
+				session.location = nil
+			}
+		}
+	}
+	
+	private func updateBoxes() {
+		// Track which locations are already assigned
+		var assignedLocations: Set<Location> = []
+		// First, assign locations to devices in boxes if not already set
+		for (idx, device) in boxes.enumerated() {
+			let loc = locationForIndex(idx)
+			if let device, let peripheralSession = ble.sessionsByPeripheral[device.uuid] {
+				// Only assign if not already set or if location is taken by another device
+				if peripheralSession.location != loc && !assignedLocations.contains(loc) {
+					peripheralSession.location = loc
+				}
+				assignedLocations.insert(loc)
+			}
+		}
+		// Remove locations from devices not in boxes
+		for (uuid, session) in ble.sessionsByPeripheral {
+			if !boxes.contains(where: { $0?.uuid == uuid }) {
 				session.location = nil
 			}
 		}

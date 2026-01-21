@@ -11,11 +11,11 @@ import CoreBluetooth
 
 
 struct ContentView: View {
-	@Environment(\.modelContext) private var modelContext
+	@Environment(\.modelContext) var modelContext
 	@EnvironmentObject private var ble: BLEManager
 	@Query private var items: [Item]
 	@Bindable var sports: Sports
-	@Environment(Session.self) private var session
+	@Environment(Session.self) var session
 	@StateObject private var mlObject: MLTrainingObject
 
 	init(sports: Sports) {
@@ -50,10 +50,12 @@ struct ContentView: View {
 						subtitle: nil
 					)
 					.frame(width: 320)
-					.padding()
-
+					//.padding()
+					Spacer()
+					
 					HStack {
 						DummyButton()
+						//LeftControlButton(ble: ble)
 						Spacer()
 						SessionControlButton(
 							selectedActivity: sports.selectedActivity.rawValue
@@ -61,7 +63,12 @@ struct ContentView: View {
 						Spacer()
 						MLTrainingStatusButton(
 							sports: sports,
-							mlObject: mlObject
+							mlObject: session.mlTrainingObject,
+							onReset: {
+								if let newObj = try? MLTrainingObject.load(type: session.type) {
+									session.mlTrainingObject.update(from: newObj)
+								}
+							}
 						)
 					}
 					.padding(.horizontal)
@@ -76,11 +83,11 @@ struct ContentView: View {
 			.tabItem { Label("Home", systemImage: "house") }
 			
 			// AI tab
-			//NavigationStack {
-			//	AITrainingView(sports: 	sports)
-			//}
-			//.toolbar(.hidden, for: .navigationBar)
-			//.tabItem { Label("AI", systemImage: "atom") }
+			NavigationStack {
+				ExploreAIView(sports: sports)
+			}
+			.toolbar(.hidden, for: .navigationBar)
+			.tabItem { Label("AI", systemImage: "atom") }
 
 			// Explore tab
 			NavigationStack {
@@ -97,16 +104,25 @@ struct ContentView: View {
 			.tabItem { Label("Settings", systemImage: "gear") }
 		}
 		.onAppear {
-			// Ensure BLE uses the exact same ModelContext as SwiftUI
+			session.attach(modelContext: modelContext)
+				if session.logger.modelContext == nil {session.logger.attach(modelContext: modelContext)
+			}
 			if ble.modelContext == nil {
 				ble.attach(modelContext: modelContext)
 				print("[ContentView] Attached BLE to view modelContext")
 			}
-			session.attach(modelContext: modelContext)
-			session.type = sports.selectedActivity
-			BLEManager.shared.attachSession(session)
+			if session.logger.modelContext == nil {
+				session.attach(modelContext: modelContext)
+			}
+			if session.type != sports.selectedActivity {
+				session.type = sports.selectedActivity
+			}
+			if BLEManager.shared.session !== session {
+				BLEManager.shared.attachSession(session)
+			}
 			session.locationManager.requestAuthorization()
-			
+			///UI Updates
+			if let loaded = try? MLTrainingObject.load(type: sports.selectedActivity) { mlObject.update(from: loaded) }
 		}
 		.onChange(of: sports.selectedActivity) { _, newActivity in
 			session.type = newActivity

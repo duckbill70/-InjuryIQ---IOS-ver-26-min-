@@ -15,7 +15,7 @@ final class SnapshotSchedulerDistance {
     private var snapshotDistanceInterval: Double? {
         guard let obj = session?.mlTrainingObject, obj.sets > 0 else { return nil }
         // For example, divide total distance by sets
-		return Double(obj.distnace) / Double(obj.sets)
+		return Double(obj.distance) / Double(obj.sets)
     }
 
     init(session: Session) {
@@ -33,10 +33,10 @@ final class SnapshotSchedulerDistance {
 	func tick(currentDistance: Double) {
 		guard let session = session,
 			  session.state == .running,
-			  !session.mlTrainingObject.active,
+			  session.mlTrainingObject.active,
 			  let interval = snapshotDistanceInterval else { return }
 
-		let totalDistance = Double(session.mlTrainingObject.distnace)
+		let totalDistance = Double(session.mlTrainingObject.distance)
 
 		// Take snapshots at each interval
 		while let nextDist = nextSnapshotDistance, currentDistance >= nextDist, nextDist < totalDistance {

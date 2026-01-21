@@ -65,7 +65,7 @@ final class BLEManager: NSObject, ObservableObject {
     private var central: CBCentralManager!
     private var disposables: Set<AnyCancellable> = []
 	
-	private var session: Session?
+	var session: Session?
 	
 	private var rssiTimer : Timer?
 
