@@ -35,7 +35,7 @@ struct DummyButton: View {
 }
 
 #Preview {
-	let session = Session()
+	let session = Session(mlTrainingObject: MLTrainingObject(type: .running))
 	DummyButton()
 		.environment(session)
 }

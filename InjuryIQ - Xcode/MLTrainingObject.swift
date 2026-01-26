@@ -42,12 +42,70 @@ struct MLDataPoint: Codable {
 	let mag: Mag // 3D orientation (Euler angles)
 }
 
+public enum mlFatigueLevel : String, Codable {
+	case fresh
+	case moderate
+	case fatigued
+	case exhausted
+}
+
+extension mlFatigueLevel {
+	
+	var descriptor: String {
+		switch self {
+		case .fresh : return "Fresh"
+		case .moderate : return "Moderate"
+		case .fatigued : return "Fatigued"
+		case .exhausted : return "Exhausted"
+		}
+	}
+	
+	var shortDescription: String {
+		switch self {
+		case .fresh : return "No fatigue"
+		case .moderate : return "Onset of fatigue"
+		case .fatigued : return "Clear fatigue"
+		case .exhausted : return "Severe fatigue"
+		}
+	}
+	
+	var fatigueColor: Color {
+		switch self {
+		case .fresh : return .green
+		case .moderate : return .yellow
+		case .fatigued : return .orange
+		case .exhausted : return .red
+		}
+	}
+	
+	var iconName: String {
+		switch self {
+		case .fresh : return "1.circle" //"figure.stand"
+		case .moderate : return "2.circle" //"figure.walk"
+		case .fatigued : return "3.circle" //"figure.walk.motion"
+		case .exhausted : return "exclamationmark.triangle.fill" //"4.circle" //"figure.walk.motion.trianglebadge.exclamationmark"
+		}
+	}
+	
+	var description: String {
+		switch self {
+		case .fresh : return "I could continue at this intensity for a long time"
+		case .moderate : return "I’m working harder, but performance feels stable"
+		case .fatigued : return "CMy movement or timing is clearly worse"
+		case .exhausted : return "I’m struggling to keep proper form"
+		}
+	}
+}
+	
+
 struct mlTrainingSession: Codable, Identifiable, Equatable {
 	var id: UUID
 	var data: Data // or String, to store raw JSON or binary data
+	var fatigue: mlFatigueLevel
+	
 	// Add more properties as needed
 	static func == (lhs: mlTrainingSession, rhs: mlTrainingSession) -> Bool {
-		lhs.id == rhs.id && lhs.data == rhs.data
+		lhs.id == rhs.id && lhs.data == rhs.data && lhs.fatigue == rhs.fatigue
 	}
 }
 
@@ -98,9 +156,9 @@ class MLTrainingObject: ObservableObject, Codable {
 	}
 	
 	@Published var type: ActivityType
-	@Published var sessions: [Location: [mlTrainingSession]] {
-		didSet { objectWillChange.send() }
-	}
+	@Published var sessions: [Location: [mlTrainingSession]] //{
+		//didSet { objectWillChange.send() }
+	//}
 	@Published var distance: Int
 	@Published var sets: Int
 	@Published var setDuration: Int
@@ -181,23 +239,19 @@ class MLTrainingObject: ObservableObject, Codable {
 	/// A stable URL for this object's export, overwriting per activity type.
 	/// Example: Documents/Exports/Running.json
 	var exportURL: URL {
-		let dir = Self.exportsDirectory
-		return dir.appendingPathComponent("\(type.rawValue).json")
-	}
-	
-	/// Writes the current export JSON to the stable exportURL, creating the directory if needed.
-	/// Returns the URL on success.
-	@discardableResult
-	func writeExport() throws -> URL {
-		// Ensure directory exists
-		let dir = Self.exportsDirectory
-		if !FileManager.default.fileExists(atPath: dir.path) {
-			try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+		let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+		let exportFolder = documents.appendingPathComponent("Exports")
+		// Ensure the folder exists
+		if !FileManager.default.fileExists(atPath: exportFolder.path) {
+			try? FileManager.default.createDirectory(at: exportFolder, withIntermediateDirectories: true)
 		}
+		return exportFolder.appendingPathComponent("\(type.rawValue).json")
+	}
+
+	func writeExport() throws {
 		let export = MLTrainingExport(from: self)
-		let jsonData = try export.toJSONData()
-		try jsonData.write(to: exportURL, options: .atomic)
-		return exportURL
+		let data = try export.toJSONData()
+		try data.write(to: exportURL)
 	}
 	
 }
@@ -217,9 +271,24 @@ extension MLTrainingObject {
 			// FIFO: remove oldest
 			sessionsForLocation.removeFirst()
 		}
+		//sessionsForLocation.append(session)
+		//sessions[location] = sessionsForLocation
+		//objectWillChange.send()
 		sessionsForLocation.append(session)
-		sessions[location] = sessionsForLocation
-		objectWillChange.send()
+		var newSessions = sessions
+		newSessions[location] = sessionsForLocation
+		sessions = newSessions // <- This triggers SwiftUI updates
+	}
+	
+	///Ahs any sessions:
+	var hasAnySessions: Bool {
+		sessions.values.contains { !$0.isEmpty }
+	}
+}
+
+extension MLTrainingObject: Equatable {
+	static func == (lhs: MLTrainingObject, rhs: MLTrainingObject) -> Bool {
+		lhs.uuid == rhs.uuid
 	}
 }
 
@@ -233,7 +302,7 @@ extension MLTrainingObject {
 // In MLTrainingObject.swift for outpuring the object -
 extension MLTrainingObject {
 	func update(from other: MLTrainingObject) {
-		objectWillChange.send()
+		//objectWillChange.send()
 		self.type = other.type
 		self.sessions = other.sessions
 		self.distance = other.distance
@@ -254,7 +323,8 @@ extension MLTrainingObject {
 extension MLTrainingObject: CustomStringConvertible {
 	var description: String {
 		let sessionSummary = sessions.map { (location, sessions) in
-			"\(location.displayName): \(sessions.count) session(s)"
+			let fatigueList = sessions.map { $0.fatigue.descriptor }.joined(separator: ", ")
+			return "\(location.displayName): \(sessions.count) session(s) [fatigue: \(fatigueList)]"
 		}.joined(separator: ", ")
 		return "MLTrainingObject (\(uuid)) -- (type: \(type), active: \(active), sessions: [\(sessionSummary)], distance: \(distance), sets: \(sets), setDuration: \(setDuration))"
 	}
@@ -262,7 +332,7 @@ extension MLTrainingObject: CustomStringConvertible {
 
 extension mlTrainingSession: CustomStringConvertible {
 	var description: String {
-		"MLSession(id: \(id.uuidString), data: \(data.count) bytes)"
+		"MLSession(id: \(id.uuidString), fatigue: \(fatigue.descriptor) ,data: \(data.count) bytes)"
 	}
 }
 

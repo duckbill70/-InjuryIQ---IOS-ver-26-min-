@@ -16,7 +16,7 @@ struct InjuryIQApp: App {
 	//@Environment(Session.self) private var session
 	
 	@State private var sports = Sports()
-	@State var session = Session() // Injected via environment
+	@State var session = Session(mlTrainingObject: MLTrainingObject(type: .running)) // Injected via environment
     
     private let fallbackContainer: ModelContainer = {
 		let schema = Schema([Item.self, KnownDevice.self, SessionRecord.self])

@@ -479,7 +479,7 @@ struct DeviceManager: View {
 }
 
 #Preview {
-	let session = Session()
+	let session = Session(mlTrainingObject: MLTrainingObject(type: .running))
 	DeviceManager(ble: BLEManager.shared)
 		.environmentObject(BLEManager.shared)
 		.environment(session)

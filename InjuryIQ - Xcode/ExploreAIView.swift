@@ -2,170 +2,392 @@ import SwiftUI
 import _SwiftData_SwiftUI
 import CoreBluetooth
 import SwiftData
+import Combine
 
 struct ExploreAIView: View {
-	
-    @EnvironmentObject private var ble: BLEManager
-    @Environment(\.modelContext) var modelContext
-	@State private var mlObjects: [MLTrainingObject] = []
+	@EnvironmentObject private var ble: BLEManager
+	@Environment(\.modelContext) var modelContext
 	@Bindable var sports: Sports
-	
-    var body: some View {
-        VStack(spacing: 0) {
-			if mlObjects.isEmpty {
-				MLTrainingObjectEmptyView()
-					.frame(maxWidth: .infinity, maxHeight: .infinity)
-			} else {
-				ScrollView {
-					LazyVStack(spacing: 12, pinnedViews: []) {
-						ForEach(mlObjects, id: \.uuid) { obj in
-							MLTrainingObjectCard(obj: obj, sports: sports) {
-								loadMLObjects()
+	@ObservedObject var mlObject: MLTrainingObject
+	@State private var selectedActivity: ActivityType
+
+	init(sports: Sports, mlObject: MLTrainingObject) {
+		self.sports = sports
+		self._mlObject = ObservedObject(wrappedValue: mlObject)
+		_selectedActivity = State(initialValue: sports.selectedActivity)
+	}
+
+	var body: some View {
+		VStack(alignment: .center, spacing: 16) {
+			MLActivityButtons(sports: sports)
+			
+			ScrollView(){
+				MLObjectHeader(obj: mlObject)
+					.padding()
+					.background(
+						GeometryReader { geometry in
+							ZStack {
+								//Image("backgroundb")
+								//	.resizable()
+								//	.scaledToFill()
+								//	.frame(width: geometry.size.width, height: geometry.size.height)
+								//	.clipped()
+								//	.overlay(Color.black.opacity(0.0))
 							}
+							.clipShape(RoundedRectangle(cornerRadius: 14))
 						}
-					}
-					.padding(.horizontal)
-					.padding(.top, 12)
-					.padding(.bottom, 24)
+					)
+					.overlay(
+						RoundedRectangle(cornerRadius: 14)
+							.strokeBorder(Color.primary.opacity(0.5))
+					)
+				
+				if mlObject.sessions.values.flatMap({ $0 }).isEmpty {
+					NoMLTraingObjectSessions()
+						.padding()
+						.background(
+							GeometryReader { geometry in
+								ZStack {
+									//Image("backgroundb")
+									//	.resizable()
+									//	.scaledToFill()
+									//	.frame(width: geometry.size.width, height: geometry.size.height)
+									//	.clipped()
+									//	.overlay(Color.black.opacity(0.0))
+								}
+								.clipShape(RoundedRectangle(cornerRadius: 14))
+							}
+						)
+						.overlay(
+							RoundedRectangle(cornerRadius: 14)
+								.strokeBorder(Color.primary.opacity(0.5))
+						)
+					MLObjectFooter(obj: mlObject)
+						.padding()
+						.background(
+							GeometryReader { geometry in
+								ZStack {
+									//Image("backgroundb")
+									//	.resizable()
+									//	.scaledToFill()
+									//	.frame(width: geometry.size.width, height: geometry.size.height)
+									//	.clipped()
+									//	.overlay(Color.black.opacity(0.0))
+								}
+								.clipShape(RoundedRectangle(cornerRadius: 14))
+							}
+						)
+						.overlay(
+							RoundedRectangle(cornerRadius: 14)
+								.strokeBorder(Color.primary.opacity(0.5))
+						)
+				} else {
+					mlObjectView(obj: mlObject)
+						.padding()
+						.background(
+							GeometryReader { geometry in
+								ZStack {
+									//Image("backgroundb")
+									//	.resizable()
+									//	.scaledToFill()
+									//	.frame(width: geometry.size.width, height: geometry.size.height)
+									//	.clipped()
+									//	.overlay(Color.black.opacity(0.0))
+								}
+								.clipShape(RoundedRectangle(cornerRadius: 14))
+							}
+						)
+						.overlay(
+							RoundedRectangle(cornerRadius: 14)
+								.strokeBorder(Color.primary.opacity(0.5))
+						)
+					MLObjectFooter(obj: mlObject)
+						.padding()
+						.background(
+							GeometryReader { geometry in
+								ZStack {
+									//Image("backgroundb")
+									//	.resizable()
+									//	.scaledToFill()
+									//	.frame(width: geometry.size.width, height: geometry.size.height)
+									//	.clipped()
+									//	.overlay(Color.black.opacity(0.0))
+								}
+								.clipShape(RoundedRectangle(cornerRadius: 14))
+							}
+						)
+						.overlay(
+							RoundedRectangle(cornerRadius: 14)
+								.strokeBorder(Color.primary.opacity(0.5))
+						)
 				}
 			}
-        }
-		.onAppear { loadMLObjects() }
-        .navigationDestination(for: DiscoveredPeripheral.self) { dp in
-            PeripheralDetailView(dp: dp)
-        }
-    }
-	
-	private func loadMLObjects() {
-		var loaded: [MLTrainingObject] = []
-		for type in ActivityType.allCases {
-			if let obj = try? MLTrainingObject.load(type: type) {
-				loaded.append(obj)
+
+			
+		}
+		.padding()
+		.frame(maxHeight: .infinity, alignment: .top)
+		.onAppear {
+			let activity = sports.selectedActivity
+			if selectedActivity != activity {
+				selectedActivity = activity
+			}
+			if let obj = try? MLTrainingObject.load(type: selectedActivity) {
+				mlObject.update(from: obj)
+			} else {
+				mlObject.update(from: MLTrainingObject(type: selectedActivity))
 			}
 		}
-		mlObjects = loaded
+		.onChange(of: sports.selectedActivity) { _, newValue in
+			print("[ExploreAIView] selectedActivity changed:", newValue, "loading new mlObject")
+			if let obj = try? MLTrainingObject.load(type: newValue) {
+				mlObject.update(from: obj)
+			} else {
+				mlObject.update(from: MLTrainingObject(type: newValue))
+			}
+		}
+		.onChange(of: mlObject) { _, newValue in
+			print("[ExploreAIView] mlObject properties changed:", newValue)
+		}
 	}
 }
 
-struct MLTrainingObjectCard: View {
-	@ObservedObject var obj: MLTrainingObject
-	let sports : Sports
-	var onReset: (() -> Void)?
+
+struct MLActivityButtons: View {
 	
-	private let headerFontSize: CGFloat = 20
-	private let chipHeight: CGFloat = 32
-	private let actionSize: CGFloat = 48
+	//@Binding var selectedActivity: ActivityType
+	@Bindable var sports: Sports
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			// Header
+		HStack(spacing: 12) {
+			ForEach(ActivityButton.activities) { activity in
+				Button {
+					sports.selectedActivity = activity.type
+				} label: {
+					VStack {
+						Image(systemName: activity.icon)
+							.font(.title2)
+						Text(activity.name)
+							.font(.caption)
+					}
+					.frame(maxWidth: .infinity, minHeight: 50 )
+					.padding()
+					.background( sports.selectedActivity == activity.type ? activity.selectedColor : activity.unselectedColor )
+					.foregroundColor( sports.selectedActivity == activity.type ? .white : .primary )
+					.cornerRadius(10)
+				}
+				//.disabled(session.state == .running)
+			}
+		}
+	}
+}
+
+struct MLObjectHeader: View {
+	@ObservedObject var obj: MLTrainingObject
+	var headerFontSize: CGFloat = 20
+	var chipHeight: CGFloat = 28
+
+	var body: some View {
+		VStack(spacing: 30) {
 			HStack(spacing: 12) {
 				Image(systemName: obj.type.icon)
-					.font(.system(size: 24, weight: .semibold))
+					.font(.system(size: chipHeight, weight: .semibold))
 					.foregroundStyle(obj.type.activityColor)
-					.frame(width: 28)
+					.frame(width: chipHeight, height: chipHeight)
 				VStack(alignment: .leading, spacing: 2) {
 					Text(obj.type.descriptor)
 						.font(.system(size: headerFontSize, weight: .heavy))
-					Text(obj.trainingType == .distance ? "\(obj.distance) km" : "\(obj.setDuration) min")
-						.font(.subheadline)
-						.foregroundStyle(.secondary)
 				}
 				Spacer()
 				Text(obj.active ? "Active" : "Complete")
 					.font(.subheadline.weight(.semibold))
-					.padding(.horizontal, 10).frame(height: chipHeight)
+					.padding(.horizontal, 10)
+					.frame(height: chipHeight)
 					.background(Capsule().fill((obj.active ? Color.green : Color.orange).opacity(0.18)))
 					.overlay(Capsule().stroke((obj.active ? Color.green : Color.orange).opacity(0.35)))
 			}
-			
-			// Sessions per location
-			VStack(alignment: .leading, spacing: 8) {
-				ForEach(obj.sessions.sorted(by: { $0.key.displayName < $1.key.displayName }), id: \.key) { location, sessions in
-					HStack(spacing: 12) {
-						HStack(spacing: 6) {
-							location.iconView
-							Text(location.displayName)
-						}
-						.font(.subheadline.weight(.semibold))
-						.padding(.horizontal, 10).frame(height: chipHeight)
-						.background(Capsule().fill(obj.type.activityColor.opacity(0.12)))
-						.overlay(Capsule().stroke(obj.type.activityColor.opacity(0.3)))
-						
-						Spacer(minLength: 8)
-						
-						let freq = sessions.averageFrequencyHz ?? 0.0
-						let countText = "\(sessions.count)/\(obj.sets)"
-						let freqText = String(format: "%.1f Hz", freq)
-						
-						Text("\(countText)  •  \(freqText)")
-							.font(.footnote.monospacedDigit())
-							.padding(.horizontal, 10).frame(height: chipHeight)
-							.background(Capsule().fill((obj.active ? Color.green : Color.orange).opacity(0.12)))
-							.overlay(Capsule().stroke((obj.active ? Color.green : Color.orange).opacity(0.3)))
-					}
+			HStack(){
+				HStack(spacing: 6){
+					Image(systemName: obj.trainingType == .distance ? "ruler" : "clock")
+						.font(.system(size: chipHeight, weight: .semibold))
+						.foregroundStyle(.blue)
+						.frame(width: chipHeight, height: chipHeight)
+					Text(obj.trainingType == .distance ? "Distance:" : "Interval:")
+						//.foregroundColor(.black)
+					Text(obj.trainingType == .distance ? "\(obj.distance)km" : "\(obj.setDuration)min")
+						//.foregroundColor(.black)
 				}
-			}
-			
-			Divider().padding(.vertical, 4)
-			
-			// Actions
-			HStack(spacing: 12) {
-				// Reset
-				if !obj.sessions.isEmpty {
-					Button {
-						let activity = obj.type
-						try? MLTrainingObject.reset(type: activity)
-						if let newObj = try? MLTrainingObject.load(type: activity) {
-							obj.update(from: newObj)
-							onReset?()
-						}
-					} label: {
-						Image(systemName: "arrow.counterclockwise")
-							.font(.system(size: 22, weight: .semibold))
-							.frame(width: actionSize, height: actionSize)
-							.background(Circle().fill(Color.red.opacity(0.12)))
-							.foregroundStyle(Color.red)
-							.overlay(Circle().stroke(Color.red.opacity(0.35)))
-					}
-					.buttonStyle(.plain)
-					.accessibilityLabel(Text("Reset Training Data"))
-				}
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.font(.subheadline)
+				.foregroundStyle(.secondary)
 				
 				Spacer()
 				
-				// Share (stable export)
-				if !obj.active {
-					Button {
-						try? obj.writeExport()
-					} label: {
-						ShareLink(item: obj.exportURL) {
-							Image(systemName: "square.and.arrow.up")
-								.font(.system(size: 22, weight: .semibold))
-								.frame(width: actionSize, height: actionSize)
-								.background(Circle().fill(Color.blue.opacity(0.12)))
-								.foregroundStyle(Color.blue)
-								.overlay(Circle().stroke(Color.blue.opacity(0.35)))
-						}
-					}
-					.buttonStyle(.plain)
-					.accessibilityLabel(Text("Share Training Export"))
+				HStack(spacing: 6){
+					Image(systemName: "chart.xyaxis.line")
+						.font(.system(size: chipHeight, weight: .semibold))
+						.foregroundStyle(.blue)
+						.frame(width: chipHeight, height: chipHeight)
+					Text("\(obj.sets) sets ")
+						//.foregroundColor(.black)
 				}
+				.frame(maxWidth: .infinity, alignment: .trailing)
+				.font(.subheadline)
+				.foregroundStyle(.secondary)
 			}
 		}
-		.padding(14)
-		.background(
-			RoundedRectangle(cornerRadius: 14)
-				.fill(Color(.secondarySystemBackground))
-		)
-		.overlay(
-			RoundedRectangle(cornerRadius: 14)
-				.strokeBorder(Color.primary.opacity(0.08))
-		)
+		.padding()
 	}
 }
 
-struct MLTrainingObjectEmptyView: View {
+struct MLObjectFooter: View {
+	@ObservedObject var obj: MLTrainingObject
+	var headerFontSize: CGFloat = 20
+	var chipHeight: CGFloat = 28
+
+	var body: some View {
+		HStack(){
+					
+			ShareLink(item: obj.exportURL) {
+				Image(systemName: "square.and.arrow.up")
+					.resizable()
+					.scaledToFit()
+					.frame(width: chipHeight, height: chipHeight)
+					.padding()
+					//.foregroundColor()
+			}
+			.background(.ultraThinMaterial, in: Circle())
+			.overlay(
+				Circle()
+					.stroke(Color.white.opacity(0.2), lineWidth: 1)
+			)
+			.shadow(radius: 8)
+			
+			Spacer()
+			
+			Button(action: {
+				let activity = obj.type
+				try? MLTrainingObject.reset(type: activity)
+				if let newObj = try? MLTrainingObject.load(type: activity) {
+					obj.update(from: newObj)
+				}}) {
+				Image(systemName: "arrow.trianglehead.clockwise")
+					.resizable()
+					.scaledToFit()
+					.frame(width: chipHeight, height: chipHeight)
+					.padding()
+					//.foregroundColor()
+			}
+			.background(.ultraThinMaterial, in: Circle())
+			.overlay(
+				Circle()
+					.stroke(Color.white.opacity(0.2), lineWidth: 1)
+			)
+			.shadow(radius: 8)
+			
+		}
+		.padding()
+	}
+}
+
+struct mlObjectView: View {
+	@ObservedObject var obj: MLTrainingObject
+	
+	var chipHeight: CGFloat = 35
+
+	var body: some View {
+		ForEach(obj.sessions.sorted(by: { $0.key.displayName < $1.key.displayName }), id: \.key) { location, sessions in
+			VStack(alignment: .leading, spacing: 20) {
+				
+				let freq = sessions.averageFrequencyHz ?? 0.0
+				let countText = "\(sessions.count)/\(obj.sets)"
+				let freqText = String(format: "%.1f Hz", freq)
+				
+				HStack(spacing: 6) {
+					location.iconView
+					Text("\(location.displayName)")
+					Text("\(countText)  •  \(freqText)")
+				}
+				.font(.subheadline.weight(.semibold))
+				//.padding(.horizontal, 10)
+				.frame(height: chipHeight)
+				.frame(maxWidth: .infinity, alignment: .center)
+				.foregroundColor(.white)
+				.background(Capsule().fill((Color.blue).opacity(1)))
+				.overlay(Capsule().stroke((Color.blue).opacity(1)))
+				
+				VStack(spacing: 20) {
+					ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+						FatigueSelector(obj: obj, location: location, session: session, index: index)
+					}
+				}
+				.font(.caption)
+				.foregroundColor(.secondary)
+				
+			}
+		}
+	}
+}
+
+struct FatigueSelector: View {
+	@ObservedObject var obj: MLTrainingObject
+	var chipHeight: CGFloat = 28
+	let location: Location
+	let session: mlTrainingSession
+	let index: Int
+
+	var body: some View {
+		GeometryReader { geometry in
+			ZStack {
+				HStack(spacing: 0) {
+					Spacer()
+					ForEach([mlFatigueLevel.fresh, .moderate, .fatigued, .exhausted], id: \.self) { level in
+						Button(action: {
+							if var sessionsForLocation = obj.sessions[location],
+							   let sessIdx = sessionsForLocation.firstIndex(where: { $0.id == session.id }) {
+								var updatedSession = sessionsForLocation[sessIdx]
+								updatedSession.fatigue = level
+								sessionsForLocation[sessIdx] = updatedSession
+								obj.sessions[location] = sessionsForLocation
+								try? obj.save()
+							}
+						}) {
+							Image(systemName: level.iconName)
+								.resizable()
+								.scaledToFit()
+								.frame(width: chipHeight, height: chipHeight)
+								.padding()
+								.foregroundColor(Color(session.fatigue == level ? level.fatigueColor : .gray ))
+						}
+						.background(.ultraThinMaterial, in: Circle())
+						.overlay(
+							Circle()
+								.stroke(Color(session.fatigue == level ? level.fatigueColor : Color.white.opacity(0.2)), lineWidth: 1))
+						.shadow(radius: 8)
+						.frame(maxWidth: .infinity)
+						if level != .exhausted { Spacer() }
+					}
+				}
+				.padding()
+				.overlay(
+					RoundedRectangle(cornerRadius: 14)
+						.strokeBorder(Color.primary.opacity(0.25))
+				)
+
+				Text("Fatigue (Set:\(index + 1 ))")
+					.font(.caption.bold())
+					.padding(.horizontal, 8)
+					.background(Color(.systemBackground))
+					.position(x: geometry.size.width / 2, y: 0)
+			}
+			.frame(maxWidth: .infinity)
+		}
+		.frame(height: 80) // Adjust as needed
+		.padding(.vertical)
+	}
+}
+
+struct NoMLTraingObjectSessions: View {
 	var body: some View {
 		VStack(spacing: 16) {
 			Image(systemName: "tray")
@@ -182,26 +404,48 @@ struct MLTrainingObjectEmptyView: View {
 		}
 		.padding()
 	}
+		
 }
 
-#Preview {
-	// Create dummy sessions
-	let dummySession = mlTrainingSession(id: UUID(), data: Data())
-	let dummyMLObject = MLTrainingObject(
-		type: .hiking,
-		sessions: [
-			.leftfoot: [dummySession, dummySession],
-			.rightfoot: [dummySession, dummySession]
-		],
-		distance: 0,
-		sets: 3,
-		setDuration: 30
-	)
-	MLTrainingObjectCard(obj: dummyMLObject, sports: Sports()) { }
-		.padding()
+///Preview
+extension MLTrainingObject {
+	static var preview: MLTrainingObject {
+		let sessionA = mlTrainingSession(
+			id: UUID(),
+			data: Data(), // or mock data
+			fatigue: .moderate
+		)
+		let sessionB = mlTrainingSession(
+			id: UUID(),
+			data: Data(), // or mock data
+			fatigue: .exhausted
+		)
+		let sessionC = mlTrainingSession(
+			id: UUID(),
+			data: Data(), // or mock data
+			fatigue: .fresh
+		)
+		return MLTrainingObject(
+			type: .running, // or any ActivityType you want
+			sessions: [.leftfoot: [sessionC, sessionB, sessionA], .rightfoot: [sessionC, sessionB, sessionA]],
+			distance: 5,
+			sets: 2,
+			setDuration: 10
+		)
+	}
 }
 
+
 #Preview {
-    ExploreAIView(sports: Sports())
-        .environmentObject(BLEManager.shared)
+	// Set up preview data
+	let previewObj = MLTrainingObject.preview
+	try? previewObj.save() // Overwrite the file for .running
+
+	let sports = Sports()
+	sports.selectedActivity = .running
+
+	return ExploreAIView(sports: sports, mlObject: previewObj)
+		.environmentObject(BLEManager.shared)
+		//.environment(\.colorScheme, .dark)
+		//.environment(\.locale, .init(identifier: "en"))
 }

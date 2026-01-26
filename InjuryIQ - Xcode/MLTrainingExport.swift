@@ -20,6 +20,7 @@ struct MLTrainingExport: Encodable {
 
 	struct ExportSession: Encodable {
 		let id: UUID
+		let fatigue: String
 		let dataPoints: [ExportDataPoint]
 	}
 
@@ -56,6 +57,7 @@ struct MLTrainingExport: Encodable {
 				sessions: sessionArray.map { session in
 					ExportSession(
 						id: session.id,
+						fatigue: session.fatigue.descriptor,
 						dataPoints: session.dataPoints.map { point in
 							ExportDataPoint(
 								time: point.timestamp,

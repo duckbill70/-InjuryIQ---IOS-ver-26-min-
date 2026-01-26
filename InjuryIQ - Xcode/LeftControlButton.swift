@@ -97,7 +97,7 @@ struct LeftControlButton: View {
 }
 
 #Preview {
-	let session = Session()
+	let session = Session(mlTrainingObject: MLTrainingObject(type: .running))
 	LeftControlButton(ble: BLEManager.shared)
 		.environmentObject(BLEManager.shared)
 		.environment(session)

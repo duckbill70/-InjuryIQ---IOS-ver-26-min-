@@ -12,6 +12,7 @@ struct SettingsView: View {
 		Form {
 			Section(header: Text("Bluetooth")) {
 				Toggle("Auto-scan on launch", isOn: $ble.autoScanOnLaunch)
+					.disabled(true)
 				Toggle("Filter duplicate discoveries", isOn: $ble.filterDuplicates)
 			}
 
@@ -72,11 +73,6 @@ struct SettingsView: View {
 				}
 			}
 
-			Section(header: Text("App")) {
-				Toggle("Enable Notifications", isOn: .constant(true))
-				Toggle("Use Cellular Data", isOn: .constant(false))
-			}
-
 			Section(header: Text("About")) {
 				HStack {
 					Text("Version")
@@ -97,6 +93,30 @@ struct SettingsView: View {
 					)
 					.foregroundColor(.secondary)
 				}
+			}
+			
+			Section(header: Text("App")) {
+				Toggle("Enable Notifications", isOn: .constant(false))
+					.disabled(true)
+				Toggle("Use Cellular Data", isOn: .constant(false))
+					.disabled(true)
+				Button(role: .destructive) {
+					resetAllMLTrainingObjects()
+				} label: {
+					Label("Reset Training Data", systemImage: "trash")
+				}
+			}
+			
+		}
+	}
+	
+	private func resetAllMLTrainingObjects() {
+		for type in ActivityType.allCases {
+			do {
+				try MLTrainingObject.delete(type: type)
+				print("[SettingsView] Deleted MLTrainingObject for \(type)")
+			} catch {
+				print("[SettingsView] Error deleting MLTrainingObject for \(type): \(error)")
 			}
 		}
 	}

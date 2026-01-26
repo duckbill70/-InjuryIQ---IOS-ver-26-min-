@@ -292,7 +292,18 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 		print("[DEBUG] saveIMUSamplesToMLTrainingObject called: samples.count = \(samples.count), location = \(location.displayName)")
 
 		if let jsonData = try? JSONEncoder().encode(dataPoints) {
-			let mlSession = mlTrainingSession(id: UUID(), data: jsonData)
+			
+			// Count existing sessions for this location
+			let count = session.mlTrainingObject.sessions[location]?.count ?? 0
+			let fatigue: mlFatigueLevel
+			switch count {
+			case 0: fatigue = .fresh
+			case 1: fatigue = .moderate
+			case 2: fatigue = .fatigued
+			default: fatigue = .exhausted
+			}
+			
+			let mlSession = mlTrainingSession(id: UUID(), data: jsonData, fatigue: fatigue)
 			if session.mlTrainingObject.canAddSession(for: location) {
 				session.mlTrainingObject.addSession(mlSession, for: location)
 				try? session.mlTrainingObject.save()

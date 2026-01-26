@@ -313,7 +313,15 @@ extension BLEManager: CBCentralManagerDelegate {
 		lastConnectedInfo = ConnectedInfo(uuid: uuid, name: name)
 		
 		// Create session on connection
-		if sessionsByPeripheral[uuid] == nil {
+		//if sessionsByPeripheral[uuid] == nil {
+		//	let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: localName)
+		//	session.session = self.session
+		//	sessionsByPeripheral[uuid] = session
+		//}
+		if let existingSession = sessionsByPeripheral[uuid] {
+			existingSession.peripheral.delegate = self
+			// Optionally update peripheral reference if needed
+		} else {
 			let session = PeripheralSession(peripheral: peripheral, characteristics: [:], localName: localName)
 			session.session = self.session
 			sessionsByPeripheral[uuid] = session
@@ -337,7 +345,7 @@ extension BLEManager: CBCentralManagerDelegate {
 		}
 		
 		session?.logger.append(kind: .bleConnected, metadata: ["device": "\(localName)"])
-
+		
     }
 
     func centralManager( _ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error? ) {
@@ -358,7 +366,8 @@ extension BLEManager: CBCentralManagerDelegate {
 		
 		// Remove characteristics and sessions for the disconnected peripheral
 		characteristicsByPeripheral.removeValue(forKey: peripheral.identifier)
-		sessionsByPeripheral.removeValue(forKey: peripheral.identifier)
+		
+		//sessionsByPeripheral.removeValue(forKey: peripheral.identifier)
 		
         updateKnownDevice(uuid: peripheral.identifier, isConnected: false)
 		
@@ -368,6 +377,12 @@ extension BLEManager: CBCentralManagerDelegate {
 		}
 		
 		session?.logger.append(kind: .bleDisconnected, metadata: ["device": "\(localName)"])
+		
+		if let session = self.session, session.state == .running {
+			print("[BLEmanager] Attempting to reconnect to \(localName) because session is running")
+			central.connect(peripheral, options: nil)
+		}
+		
     }
 }
 
@@ -407,6 +422,13 @@ extension BLEManager: CBPeripheralDelegate {
 			session.addCharacteristic(char, from: peripheral)
 		}
 		sessionsByPeripheral[peripheral.identifier] = session
+		
+		// At the end of didDiscoverCharacteristicsFor service:
+		if let session = self.session, session.state == .running {
+			if let peripheralSession = sessionsByPeripheral[peripheral.identifier] {
+				peripheralSession.writeCommand(2) // 2 = cmd_state_running
+			}
+		}
 		
     }
 	

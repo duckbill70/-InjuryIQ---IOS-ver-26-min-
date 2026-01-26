@@ -88,8 +88,8 @@ extension ActivityType {
 	
 	var mlDistance: Int {
 		switch self {
-		case .running: return 1
-		case .hiking: return 0
+		case .running: return 3
+		case .hiking: return 10
 		case .racket: return 0
 		case .cycling: return 10
 		}
@@ -107,8 +107,8 @@ extension ActivityType {
 	var mlDuration: Int {
 		switch self {
 		case .running: return 0
-		case .hiking: return 3
-		case .racket: return 30
+		case .hiking: return 0
+		case .racket: return 3
 		case .cycling: return 0
 		}
 	}
@@ -116,7 +116,7 @@ extension ActivityType {
 	var mltype: MLTrainingType {
 		switch self {
 		case .running: return .distance
-		case .hiking: return .duration
+		case .hiking: return .distance
 		case .racket: return .duration
 		case .cycling: return .distance
 		}

@@ -72,13 +72,17 @@ final class Session {
 	private var bleManager: BLEManager?
 	private var timer: Timer?
 	var activity: String = ""
-	var mlTrainingObject: MLTrainingObject = MLTrainingObject(type: .running)
+	var mlTrainingObject: MLTrainingObject //= MLTrainingObject(type: .running)
 	var type: ActivityType = .running {
-		didSet {
-			mlTrainingObject = (try? MLTrainingObject.load(type: type)) ?? MLTrainingObject(type: type)
-			print("[Session] - New MLTrainingObject: \(mlTrainingObject)")
+			didSet {
+				if let loaded = try? MLTrainingObject.load(type: type) {
+					mlTrainingObject.update(from: loaded)
+				} else {
+					mlTrainingObject.update(from: MLTrainingObject(type: type))
+				}
+				print("[Session] - Updated MLTrainingObject: \(mlTrainingObject)")
+			}
 		}
-	}
 	
 	///For timer based MLTraining
 	private var snapshotSchedulerDuration: SnapshotSchedulerDuration?
@@ -87,13 +91,12 @@ final class Session {
 	///Location Manager
 	var locationManager = LocationManager()
 	
-	init(activityType: ActivityType = .running) {
+	init(activityType: ActivityType = .running, mlTrainingObject: MLTrainingObject) {
 		
 		// ... other initializations ...
 		self.type = activityType
-		self.mlTrainingObject = (try? MLTrainingObject.load(type: activityType)) ?? MLTrainingObject(type: activityType)
-		
-		
+		//self.mlTrainingObject = (try? MLTrainingObject.load(type: activityType)) ?? MLTrainingObject(type: activityType)
+		self.mlTrainingObject = mlTrainingObject
 		
 		locationManager.onLocationsUpdate = { [weak self] newLocations in
 			guard let self = self, self.state == .running else { return }

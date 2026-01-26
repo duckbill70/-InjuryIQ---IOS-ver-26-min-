@@ -19,10 +19,11 @@ struct ContentView: View {
 	@StateObject private var mlObject: MLTrainingObject
 
 	init(sports: Sports) {
+		let mlObj = MLTrainingObject(type: sports.selectedActivity)
+		_mlObject = StateObject(wrappedValue: mlObj)
 		self._sports = Bindable(wrappedValue: sports)
-		_mlObject = StateObject(wrappedValue: MLTrainingObject(type: sports.selectedActivity))
 	}
-
+	
 	var body: some View {
 		TabView {
 			NavigationStack {
@@ -84,7 +85,7 @@ struct ContentView: View {
 			
 			// AI tab
 			NavigationStack {
-				ExploreAIView(sports: sports)
+				ExploreAIView(sports: sports, mlObject: session.mlTrainingObject)
 			}
 			.toolbar(.hidden, for: .navigationBar)
 			.tabItem { Label("AI", systemImage: "atom") }
@@ -149,7 +150,7 @@ struct ContentView: View {
 						Text(activity.name)
 							.font(.caption)
 					}
-					.frame(maxWidth: .infinity)
+					.frame(maxWidth: .infinity, minHeight: 50)
 					.padding()
 					.background(
 						sports.selectedActivity == activity.type
@@ -214,7 +215,7 @@ struct ContentView: View {
 
 #Preview {
 	@Previewable @State var sports = Sports()
-	@Previewable @State var session = Session()
+	@Previewable @State var session = Session(mlTrainingObject: MLTrainingObject(type: .running))
 	
 	ContentView(sports: sports)
 		.environmentObject(BLEManager.shared)
