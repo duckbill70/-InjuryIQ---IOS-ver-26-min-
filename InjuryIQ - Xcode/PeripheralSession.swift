@@ -145,17 +145,6 @@ struct PeripheralData {
 	
 }
 
-//extension PeripheralData {
-//	var locationColor: Color {
-//		switch location {
-//		case nil: return .clear      // none
-//		case 0x00: return .red       // 0x00
-//		case 0x01: return .green     // 0x01
-//		default: return .gray        // unexpected values
-//		}
-//	}
-//}
-
 class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	
 	let peripheral: CBPeripheral
@@ -186,8 +175,8 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	static let fifoL2CAPCharUUID	= CBUUID(string: "12345680-1234-5678-1234-56789ABCDEF3")
 	
 	///UUIDs Battery Service and its characteristics
-	static let batteryServiceUUID = CBUUID(string: "180F") // Standard UUID for
-	static let batteryCharUUID    = CBUUID(string: "2A19") // Standard UUID for Battery Level Characteristic
+	static let batteryServiceUUID = CBUUID(string: "180F")
+	static let batteryCharUUID    = CBUUID(string: "2A19")
 	
 	///Data Buffer
 	private var l2capDataBuffer = Data()
@@ -212,7 +201,7 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 			batteryLevel: nil,
 			command: nil,
 			location: nil,
-			sampleRate: nil,
+			sampleRate: nil
 		)
 	}
 	
@@ -279,37 +268,65 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	}
 	
 	///Save IMU Object to MLSession
-	@MainActor
 	private func saveIMUSamplesToMLTrainingObject(samples: [IMUSample]) {
 		guard let session = self.session, let location = self.location else { return }
-		let dataPoints = samples.map { sample in
-			MLDataPoint(
-				timestamp: TimeInterval(sample.timestamp_ms) / 1000.0,
-				accl: Accl(x: Double(sample.accel_x), y: Double(sample.accel_y), z: Double(sample.accel_z)),
-				mag: Mag(x: Double(sample.gyro_x), y: Double(sample.gyro_y), z: Double(sample.gyro_z))
-			)
-		}
-		print("[DEBUG] saveIMUSamplesToMLTrainingObject called: samples.count = \(samples.count), location = \(location.displayName)")
 
-		if let jsonData = try? JSONEncoder().encode(dataPoints) {
-			
-			// Count existing sessions for this location
-			let count = session.mlTrainingObject.sessions[location]?.count ?? 0
-			let fatigue: mlFatigueLevel
-			switch count {
-			case 0: fatigue = .fresh
-			case 1: fatigue = .moderate
-			case 2: fatigue = .fatigued
-			default: fatigue = .exhausted
+		// Offload heavy work to a background task
+		Task.detached(priority: .utility) {
+			// Map to MLDataPoint off-main
+			let dataPoints: [MLDataPoint] = samples.map { sample in
+				MLDataPoint(
+					timestamp: TimeInterval(sample.timestamp_ms) / 1000.0,
+					accl: Accl(x: Double(sample.accel_x), y: Double(sample.accel_y), z: Double(sample.accel_z)),
+					mag: Mag(x: Double(sample.gyro_x), y: Double(sample.gyro_y), z: Double(sample.gyro_z))
+				)
 			}
-			
-			let mlSession = mlTrainingSession(id: UUID(), data: jsonData, fatigue: fatigue)
-			if session.mlTrainingObject.canAddSession(for: location) {
+
+			// Encode JSON off-main
+			guard let jsonData = try? JSONEncoder().encode(dataPoints) else {
+				print("[PeripheralSession] JSON encode failed for IMU samples")
+				return
+			}
+
+			// Compute fatigue based on existing count (need main actor to read the object safely)
+			let newMLSess: mlTrainingSession? = await MainActor.run {
+				let count = session.mlTrainingObject.sessions[location]?.count ?? 0
+				let fatigue: mlFatigueLevel
+				switch count {
+				case 0: fatigue = .fresh
+				case 1: fatigue = .moderate
+				case 2: fatigue = .fatigued
+				default: fatigue = .exhausted
+				}
+				return mlTrainingSession(id: UUID(), data: jsonData, fatigue: fatigue)
+			}
+
+			guard let mlSession = newMLSess else { return }
+
+			// Mutate MLTrainingObject on main actor (UI object)
+			let canAdd: Bool = await MainActor.run {
+				session.mlTrainingObject.canAddSession(for: location)
+			}
+			guard canAdd else {
+				print("[PeripheralSession] Maximum number of sessions (\(await MainActor.run { session.mlTrainingObject.sets })) reached for \(location.displayName); snapshot ignored.")
+				return
+			}
+
+			await MainActor.run {
 				session.mlTrainingObject.addSession(mlSession, for: location)
-				try? session.mlTrainingObject.save()
+			}
+
+			// Save and export off-main
+			do {
+				try await Task.detached(priority: .utility) {
+					// Snapshot the current object for writing
+					let obj = await MainActor.run { session.mlTrainingObject }
+					try obj.save()
+					try obj.writeExport()
+				}.value
 				print("[PeripheralSession] Saved \(dataPoints.count) IMU samples to MLTrainingObject for \(location.displayName)")
-			} else {
-				print("[PeripheralSession] Maximum number of sessions (\(session.mlTrainingObject.sets)) reached for \(location.displayName); snapshot ignored.")
+			} catch {
+				print("[PeripheralSession] Error saving/exporting MLTrainingObject: \(error)")
 			}
 		}
 	}
@@ -318,7 +335,6 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	// Method to update RSSI
 	func updateRSSI(_ rssi: Int) {
 		data.rssi = rssi
-		//print ("[PeripheralSession] Updating RSSI : \(rssi) for peripheral: \(data.localName)")
 		objectWillChange.send()
 	}
 
@@ -338,36 +354,7 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 			peripheral.readValue(for: char)
 		}
 	}
-
-	// Subscribe to notifications for Command Characteristic
-	//func subscribeCommandNotifications(_ enable: Bool) {
-	//	if let char = characteristics[Self.commandCharUUID] {
-	//		peripheral.setNotifyValue(enable, for: char)
-	//	}
-	//}
-
-
-
-	// Subscribe to stats notifications
-	//func subscribeStatsNotifications(_ enable: Bool) {
-	//	if let char = characteristics[Self.statsCharUUID] {
-	//		peripheral.setNotifyValue(enable, for: char)
-	//	}
-	//}
-
 }
-
-// In PeripheralSession.swift
-//extension PeripheralSession: CustomStringConvertible {
-//	var description: String {
-		//let charList = characteristics.keys.map { $0.uuidString }.joined(separator: ", ")
-		//return "PeripheralSession(peripheral: \(peripheral.identifier), characteristics: [\(charList)])"
-		//let uuidStr = peripheral.identifier.uuidString
-		//let last4 = String(uuidStr.suffix(4))
-//		let charCount = characteristics.count
-//		return "characteristics count: \(charCount))"
-//	}
-//}
 
 extension PeripheralSession: Identifiable {
 	var id: UUID {
@@ -400,31 +387,20 @@ extension PeripheralSession {
 			case fatigueServiceUUID: return "Fatigue Service"
 			case fifoServiceUUID: return "Fifo Streaming Service"
 			case batteryServiceUUID: return "Battery Service"
-			// Add more cases as needed
 			default: return uuid.uuidString
 		}
 	}
 
 	static func characteristicName(for charUUID: CBUUID, in serviceUUID: CBUUID) -> String {
 		switch (serviceUUID, charUUID) {
-			
-		// Command Service
 		case (commandServiceUUID, commandCharUUID): return "Command"
 		case (commandServiceUUID, errorCharUUID): return "Error"
 		case (commandServiceUUID, sampleRateUUID): return "Sample Rate"
-			
-		// Fatigue Service
 		case (fatigueServiceUUID, fatigueCharUUID): return "Fatigue"
-		
-		// Fifo Streaming Service
 		case (fifoServiceUUID, fifoStreamCharUUID): return "Fifo Stream"
 		case (fifoServiceUUID, fifoStatusCharUUID): return "Fifo Status"
 		case (fifoServiceUUID, fifoL2CAPCharUUID): return "Fifo L2CAP"
-			
-		// Battery Service
 		case (batteryServiceUUID, batteryCharUUID): return "Battery Level"
-			
-		// Add more (service, char) pairs as needed
 		default: return charUUID.uuidString
 		}
 	}
@@ -438,13 +414,11 @@ extension PeripheralSession {
 		let key = CharKey(service: char.service?.uuid ?? CBUUID(), characteristic: char.uuid)
 		characteristics[key] = char
 
-		
 		if char.uuid == PeripheralSession.fifoL2CAPCharUUID {
 			peripheral.readValue(for: char)
 			print("[PeripheralSession] Subscribed to notifications for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
 		}
 
-		/// Only subscribe to notifications for notify-only characteristics
 		if char.properties.contains(.notify) {
 			peripheral.setNotifyValue(true, for: char)
 			print("[PeripheralSession] Subscribed to notifications for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
@@ -465,7 +439,6 @@ extension PeripheralSession {
 			print("[PeripheralSession] Unexpected PSM value length: \(value.count)")
 			return
 		}
-		// Only attempt to open once per session
 		if l2capChannel == nil && !l2capOpenAttempted {
 			l2capOpenAttempted = true
 			print("[PeripheralSession] Attempting to open L2CAP channel with PSM: \(psm)")
@@ -482,18 +455,12 @@ extension PeripheralSession {
 		let serviceText = characteristic.service.map { Self.serviceName(for: $0.uuid) } ?? "Unknown Service"
 		let charText = Self.characteristicName(for: characteristic.uuid, in: characteristic.service?.uuid ?? CBUUID())
 		
-		//if 	characteristic.service?.uuid != Self.batteryServiceUUID && characteristic.service?.uuid != Self.fatigueServiceUUID  {
-		//	print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
-		//}
-		
 		switch (characteristic.service?.uuid, characteristic.uuid) {
 			
-			/// Command Characteristic
 			case (PeripheralSession.commandServiceUUID, PeripheralSession.commandCharUUID):
 				data.command = CommandState(rawValue: value.first ?? 0) ?? .unknown
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 			
-			/// Sample Rate Characteristic
 			case (PeripheralSession.commandServiceUUID, PeripheralSession.sampleRateUUID):
 				if value.count >= 2 {
 					let lo = UInt16(value[0])
@@ -501,45 +468,33 @@ extension PeripheralSession {
 					data.sampleRate = hi | lo
 				}
 			
-			///Battery Characteristic
 			case (PeripheralSession.batteryServiceUUID, PeripheralSession.batteryCharUUID):
 				data.batteryLevel = value.first
 			
-			///Fatigue Characteristic
 			case (PeripheralSession.fatigueServiceUUID, PeripheralSession.fatigueCharUUID):
 				data.fatigue = value.first
 			
-			///Error Characteristic
 			case (PeripheralSession.commandServiceUUID, PeripheralSession.errorCharUUID):
 				data.errorCode = value.first
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 			
-			/// FIFO Stream Char
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStreamCharUUID):
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 
-			/// FIFO Stream Status Char
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStatusCharUUID):
 				if let status = FIFOStatusPayload(data: value) {
-					//print("[PeripheralSession] FIFOStatus: \(status)")
 					data.fifoStats = status
 				} else {
 					print("[PeripheralSession] Invalid FIFOStatus payload")
 				}
 			
-			///FIFO L2CAP
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoL2CAPCharUUID):
-				// Call handlePSMCharacteristic to open L2CAP channel
 				handlePSMCharacteristic(characteristic)
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
 				
-			
 			default:
 				return
 		}
-		
-		//
-		// Custom logic here
 	}
 	
 }

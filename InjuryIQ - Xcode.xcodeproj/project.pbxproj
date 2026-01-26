@@ -29,9 +29,30 @@
 		0653FB1F2EEDBCB1002CD708 /* InjuryIQ - XcodeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "InjuryIQ - XcodeUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		06268B732F27EAB800D202B9 /* Exceptions for "InjuryIQ - Xcode" folder in "InjuryIQ - Xcode" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				MLTrainingObjectTests.swift,
+			);
+			target = 0653FB052EEDBCB1002CD708 /* InjuryIQ - Xcode */;
+		};
+		06268B742F27EAB800D202B9 /* Exceptions for "InjuryIQ - Xcode" folder in "InjuryIQ - XcodeTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				MLTrainingObjectTests.swift,
+			);
+			target = 0653FB142EEDBCB1002CD708 /* InjuryIQ - XcodeTests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0653FB082EEDBCB1002CD708 /* InjuryIQ - Xcode */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				06268B732F27EAB800D202B9 /* Exceptions for "InjuryIQ - Xcode" folder in "InjuryIQ - Xcode" target */,
+				06268B742F27EAB800D202B9 /* Exceptions for "InjuryIQ - Xcode" folder in "InjuryIQ - XcodeTests" target */,
+			);
 			path = "InjuryIQ - Xcode";
 			sourceTree = "<group>";
 		};

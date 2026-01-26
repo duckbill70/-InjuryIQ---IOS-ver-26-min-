@@ -70,29 +70,64 @@ extension mlFatigueLevel {
 	}
 }
 
-struct mlTrainingSession: Codable, Identifiable, Equatable {
+// Caching-friendly session: caches count and frequency to avoid repeated decoding work
+struct mlTrainingSession: Codable, Identifiable, Equatable, CustomStringConvertible {
 	var id: UUID
-	var data: Data
+	var data: Data {
+		didSet {
+			recomputeCache()
+		}
+	}
 	var fatigue: mlFatigueLevel
+
+	// Cached derived values
+	private(set) var cachedDataPointsCount: Int = 0
+	private(set) var cachedFrequencyHz: Double? = nil
+
+	init(id: UUID, data: Data, fatigue: mlFatigueLevel) {
+		self.id = id
+		self.data = data
+		self.fatigue = fatigue
+		self.recomputeCache()
+	}
+
+	// Decoding/encoding must include cached fields for correctness across saves
+	enum CodingKeys: String, CodingKey {
+		case id, data, fatigue, cachedDataPointsCount, cachedFrequencyHz
+	}
+
+	mutating func recomputeCache() {
+		// Decode minimally to compute count/frequency
+		let points: [MLDataPoint]
+		if let decoded = try? JSONDecoder().decode([MLDataPoint].self, from: data) {
+			points = decoded
+		} else {
+			points = []
+		}
+		self.cachedDataPointsCount = points.count
+		if points.count > 1 {
+			let duration = points.last!.timestamp - points.first!.timestamp
+			self.cachedFrequencyHz = duration > 0 ? Double(points.count) / duration : nil
+		} else {
+			self.cachedFrequencyHz = nil
+		}
+	}
+
+	// Existing helpers now use cached values
+	var dataPointsCount: Int { cachedDataPointsCount }
+
+	var dataPoints: [MLDataPoint] {
+		(try? JSONDecoder().decode([MLDataPoint].self, from: data)) ?? []
+	}
+
+	var frequencyHz: Double? { cachedFrequencyHz }
 
 	static func == (lhs: mlTrainingSession, rhs: mlTrainingSession) -> Bool {
 		lhs.id == rhs.id && lhs.data == rhs.data && lhs.fatigue == rhs.fatigue
 	}
-}
 
-extension mlTrainingSession {
-	var dataPointsCount: Int {
-		(try? JSONDecoder().decode([MLDataPoint].self, from: data))?.count ?? 0
-	}
-	var dataPoints: [MLDataPoint] {
-		(try? JSONDecoder().decode([MLDataPoint].self, from: data)) ?? []
-	}
-	var frequencyHz: Double? {
-		let points = dataPoints
-		guard points.count > 1 else { return nil }
-		let duration = points.last!.timestamp - points.first!.timestamp
-		guard duration > 0 else { return nil }
-		return Double(points.count) / duration
+	var description: String {
+		"MLSession(id: \(id.uuidString), fatigue: \(fatigue.descriptor) ,data: \(data.count) bytes)"
 	}
 }
 
@@ -104,7 +139,7 @@ extension Array where Element == mlTrainingSession {
 	}
 }
 
-class MLTrainingObject: ObservableObject, Codable {
+class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equatable {
 
 	var uuid: UUID
 
@@ -160,6 +195,20 @@ class MLTrainingObject: ObservableObject, Codable {
 		try container.encode(setDuration, forKey: .setDuration)
 	}
 
+	static func == (lhs: MLTrainingObject, rhs: MLTrainingObject) -> Bool {
+		lhs.uuid == rhs.uuid
+	}
+
+	var description: String {
+		let sessionSummary = sessions.map { (location, sessions) in
+			let fatigueList = sessions.map { $0.fatigue.descriptor }.joined(separator: ", ")
+			return "\(location.displayName): \(sessions.count) session(s) [fatigue: \(fatigueList)]"
+		}.joined(separator: ", ")
+		return "MLTrainingObject (\(uuid)) -- (type: \(type), active: \(active), sessions: [\(sessionSummary)], distance: \(distance), sets: \(sets), setDuration: \(setDuration))"
+	}
+
+	// MARK: - Persistence
+
 	static func fileURL(for type: ActivityType) -> URL {
 		let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 		return documents.appendingPathComponent("MLTrainingObject_\(type.rawValue).json")
@@ -167,7 +216,7 @@ class MLTrainingObject: ObservableObject, Codable {
 
 	func save() throws {
 		let data = try JSONEncoder().encode(self)
-		try data.write(to: MLTrainingObject.fileURL(for: type))
+		try data.write(to: MLTrainingObject.fileURL(for: type), options: .atomic)
 		print("[MLTrainingObject] 'Save' mlObject : \(self)")
 	}
 
@@ -189,21 +238,36 @@ class MLTrainingObject: ObservableObject, Codable {
 		print("[MLTrainingObject] Reset: \(obj)")
 	}
 
+	static func delete(type: ActivityType) throws {
+		let url = fileURL(for: type)
+		if FileManager.default.fileExists(atPath: url.path) {
+			try FileManager.default.removeItem(at: url)
+		}
+		// Also delete export file for completeness
+		let temp = MLTrainingObject(type: type)
+		try? temp.deleteExport()
+	}
+
 	// MARK: - Export
 
 	var exportURL: URL {
 		let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-		let exportFolder = documents.appendingPathComponent("Exports")
-		if !FileManager.default.fileExists(atPath: exportFolder.path) {
-			try? FileManager.default.createDirectory(at: exportFolder, withIntermediateDirectories: true)
-		}
+		let exportFolder = documents.appendingPathComponent("Exports", isDirectory: true)
+		ensureDirectoryExists(exportFolder)
 		return exportFolder.appendingPathComponent("\(type.rawValue).json")
+	}
+
+	private func ensureDirectoryExists(_ url: URL) {
+		let fm = FileManager.default
+		if !fm.fileExists(atPath: url.path) {
+			try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+		}
 	}
 
 	func writeExport() throws {
 		let export = MLTrainingExport(from: self)
 		let data = try export.toJSONData()
-		try data.write(to: exportURL)
+		try data.write(to: exportURL, options: .atomic)
 	}
 
 	func deleteExport() throws {
@@ -212,10 +276,9 @@ class MLTrainingObject: ObservableObject, Codable {
 			try FileManager.default.removeItem(at: url)
 		}
 	}
-}
 
-/// Session helpers
-extension MLTrainingObject {
+	// MARK: - Session helpers
+
 	func canAddSession(for location: Location) -> Bool {
 		let sessionsForLocation = sessions[location] ?? []
 		return sessionsForLocation.count < sets
@@ -235,54 +298,16 @@ extension MLTrainingObject {
 	var hasAnySessions: Bool {
 		sessions.values.contains { !$0.isEmpty }
 	}
-}
 
-extension MLTrainingObject: Equatable {
-	static func == (lhs: MLTrainingObject, rhs: MLTrainingObject) -> Bool {
-		lhs.uuid == rhs.uuid
-	}
-}
-
-extension MLTrainingObject {
 	var trainingType: MLTrainingType {
 		type.mltype
 	}
-}
 
-extension MLTrainingObject {
 	func update(from other: MLTrainingObject) {
 		self.type = other.type
 		self.sessions = other.sessions
 		self.distance = other.distance
 		self.sets = other.sets
 		self.setDuration = other.setDuration
-	}
-}
-
-extension MLTrainingObject {
-	static func delete(type: ActivityType) throws {
-		let url = fileURL(for: type)
-		if FileManager.default.fileExists(atPath: url.path) {
-			try FileManager.default.removeItem(at: url)
-		}
-		// Also delete export file for completeness
-		let temp = MLTrainingObject(type: type)
-		try? temp.deleteExport()
-	}
-}
-
-extension MLTrainingObject: CustomStringConvertible {
-	var description: String {
-		let sessionSummary = sessions.map { (location, sessions) in
-			let fatigueList = sessions.map { $0.fatigue.descriptor }.joined(separator: ", ")
-			return "\(location.displayName): \(sessions.count) session(s) [fatigue: \(fatigueList)]"
-		}.joined(separator: ", ")
-		return "MLTrainingObject (\(uuid)) -- (type: \(type), active: \(active), sessions: [\(sessionSummary)], distance: \(distance), sets: \(sets), setDuration: \(setDuration))"
-	}
-}
-
-extension mlTrainingSession: CustomStringConvertible {
-	var description: String {
-		"MLSession(id: \(id.uuidString), fatigue: \(fatigue.descriptor) ,data: \(data.count) bytes)"
 	}
 }
