@@ -225,6 +225,13 @@ class MLTrainingObject: ObservableObject, Codable {
 	static func reset(type: ActivityType) throws {
 		let obj = MLTrainingObject(type: type)
 		try obj.save()
+		// Also clear/rewrite the export so ShareLink doesn't use a stale file
+		do {
+			try obj.deleteExport()
+		} catch {
+			// Non-fatal: if delete fails, try to at least write a fresh (empty) export
+			try? obj.writeExport()
+		}
 		print("[MLTrainingObject] Reset: \(obj)")
 	}
 	
@@ -252,6 +259,13 @@ class MLTrainingObject: ObservableObject, Codable {
 		let export = MLTrainingExport(from: self)
 		let data = try export.toJSONData()
 		try data.write(to: exportURL)
+	}
+	
+	func deleteExport() throws {
+		let url = exportURL
+		if FileManager.default.fileExists(atPath: url.path) {
+			try FileManager.default.removeItem(at: url)
+		}
 	}
 	
 }
@@ -317,6 +331,9 @@ extension MLTrainingObject {
 		if FileManager.default.fileExists(atPath: url.path) {
 			try FileManager.default.removeItem(at: url)
 		}
+		// Also delete export file for completeness
+		let temp = MLTrainingObject(type: type)
+		try? temp.deleteExport()
 	}
 }
 

@@ -16,11 +16,8 @@ struct ContentView: View {
 	@Query private var items: [Item]
 	@Bindable var sports: Sports
 	@Environment(Session.self) var session
-	@StateObject private var mlObject: MLTrainingObject
 
 	init(sports: Sports) {
-		let mlObj = MLTrainingObject(type: sports.selectedActivity)
-		_mlObject = StateObject(wrappedValue: mlObj)
 		self._sports = Bindable(wrappedValue: sports)
 	}
 	
@@ -51,12 +48,10 @@ struct ContentView: View {
 						subtitle: nil
 					)
 					.frame(width: 320)
-					//.padding()
 					Spacer()
 					
 					HStack {
 						DummyButton()
-						//LeftControlButton(ble: ble)
 						Spacer()
 						SessionControlButton(
 							selectedActivity: sports.selectedActivity.rawValue
@@ -66,7 +61,9 @@ struct ContentView: View {
 							sports: sports,
 							mlObject: session.mlTrainingObject,
 							onReset: {
-								if let newObj = try? MLTrainingObject.load(type: session.type) {
+								// Reset on disk, then update the same in-memory instance so observers update.
+								if let _ = try? MLTrainingObject.reset(type: session.type),
+								   let newObj = try? MLTrainingObject.load(type: session.type) {
 									session.mlTrainingObject.update(from: newObj)
 								}
 							}
@@ -106,7 +103,8 @@ struct ContentView: View {
 		}
 		.onAppear {
 			session.attach(modelContext: modelContext)
-				if session.logger.modelContext == nil {session.logger.attach(modelContext: modelContext)
+			if session.logger.modelContext == nil {
+				session.logger.attach(modelContext: modelContext)
 			}
 			if ble.modelContext == nil {
 				ble.attach(modelContext: modelContext)
@@ -115,6 +113,7 @@ struct ContentView: View {
 			if session.logger.modelContext == nil {
 				session.attach(modelContext: modelContext)
 			}
+			// Ensure session type tracks selected activity; Session will load/update its MLTrainingObject.
 			if session.type != sports.selectedActivity {
 				session.type = sports.selectedActivity
 			}
@@ -122,18 +121,10 @@ struct ContentView: View {
 				BLEManager.shared.attachSession(session)
 			}
 			session.locationManager.requestAuthorization()
-			///UI Updates
-			if let loaded = try? MLTrainingObject.load(type: sports.selectedActivity) { mlObject.update(from: loaded) }
 		}
 		.onChange(of: sports.selectedActivity) { _, newActivity in
+			// Single source of truth: update session.type; Session updates mlTrainingObject via update(from:)
 			session.type = newActivity
-			if mlObject.type != newActivity {
-				if let loaded = try? MLTrainingObject.load(type: newActivity) {
-					mlObject.update(from: loaded)
-				} else {
-					mlObject.update(from: MLTrainingObject(type: newActivity))
-				}
-			}
 		}
 
 	}
@@ -171,17 +162,13 @@ struct ContentView: View {
 	}
 	
 	private func deviceTable() -> some View {
-		
-		return ScrollView(.horizontal, showsIndicators: false) {
-			
+		ScrollView(.horizontal, showsIndicators: false) {
 			HStack(spacing: 12) {
-								
 				ForEach(
 					Array(ble.sessionsByPeripheral.values),
 					id: \.peripheral.identifier
 				) { session in
 					VStack {
-					   
 						Text(session.data.localName ?? "Unknown")
 							.font(.caption)
 							.lineLimit(1)

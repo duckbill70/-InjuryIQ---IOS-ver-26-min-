@@ -27,12 +27,6 @@ struct ExploreAIView: View {
 					.background(
 						GeometryReader { geometry in
 							ZStack {
-								//Image("backgroundb")
-								//	.resizable()
-								//	.scaledToFill()
-								//	.frame(width: geometry.size.width, height: geometry.size.height)
-								//	.clipped()
-								//	.overlay(Color.black.opacity(0.0))
 							}
 							.clipShape(RoundedRectangle(cornerRadius: 14))
 						}
@@ -48,12 +42,6 @@ struct ExploreAIView: View {
 						.background(
 							GeometryReader { geometry in
 								ZStack {
-									//Image("backgroundb")
-									//	.resizable()
-									//	.scaledToFill()
-									//	.frame(width: geometry.size.width, height: geometry.size.height)
-									//	.clipped()
-									//	.overlay(Color.black.opacity(0.0))
 								}
 								.clipShape(RoundedRectangle(cornerRadius: 14))
 							}
@@ -67,12 +55,6 @@ struct ExploreAIView: View {
 						.background(
 							GeometryReader { geometry in
 								ZStack {
-									//Image("backgroundb")
-									//	.resizable()
-									//	.scaledToFill()
-									//	.frame(width: geometry.size.width, height: geometry.size.height)
-									//	.clipped()
-									//	.overlay(Color.black.opacity(0.0))
 								}
 								.clipShape(RoundedRectangle(cornerRadius: 14))
 							}
@@ -87,12 +69,6 @@ struct ExploreAIView: View {
 						.background(
 							GeometryReader { geometry in
 								ZStack {
-									//Image("backgroundb")
-									//	.resizable()
-									//	.scaledToFill()
-									//	.frame(width: geometry.size.width, height: geometry.size.height)
-									//	.clipped()
-									//	.overlay(Color.black.opacity(0.0))
 								}
 								.clipShape(RoundedRectangle(cornerRadius: 14))
 							}
@@ -106,12 +82,6 @@ struct ExploreAIView: View {
 						.background(
 							GeometryReader { geometry in
 								ZStack {
-									//Image("backgroundb")
-									//	.resizable()
-									//	.scaledToFill()
-									//	.frame(width: geometry.size.width, height: geometry.size.height)
-									//	.clipped()
-									//	.overlay(Color.black.opacity(0.0))
 								}
 								.clipShape(RoundedRectangle(cornerRadius: 14))
 							}
@@ -122,40 +92,36 @@ struct ExploreAIView: View {
 						)
 				}
 			}
-
-			
 		}
 		.padding()
 		.frame(maxHeight: .infinity, alignment: .top)
 		.onAppear {
+			// Keep local selection in sync; Session handles loading/updating the object.
 			let activity = sports.selectedActivity
 			if selectedActivity != activity {
 				selectedActivity = activity
 			}
-			if let obj = try? MLTrainingObject.load(type: selectedActivity) {
-				mlObject.update(from: obj)
-			} else {
-				mlObject.update(from: MLTrainingObject(type: selectedActivity))
-			}
+			// Ensure export reflects current object when view appears
+			try? mlObject.writeExport()
 		}
 		.onChange(of: sports.selectedActivity) { _, newValue in
-			print("[ExploreAIView] selectedActivity changed:", newValue, "loading new mlObject")
-			if let obj = try? MLTrainingObject.load(type: newValue) {
-				mlObject.update(from: obj)
-			} else {
-				mlObject.update(from: MLTrainingObject(type: newValue))
-			}
+			// Only reflect selection; ML object loading is handled by Session.
+			selectedActivity = newValue
+		}
+		.onChange(of: mlObject.sessions) { _, _ in
+			// Rewrite export when session data changes
+			try? mlObject.writeExport()
 		}
 		.onChange(of: mlObject) { _, newValue in
 			print("[ExploreAIView] mlObject properties changed:", newValue)
+			// Defensive: keep export fresh after wholesale object updates
+			try? mlObject.writeExport()
 		}
 	}
 }
 
 
 struct MLActivityButtons: View {
-	
-	//@Binding var selectedActivity: ActivityType
 	@Bindable var sports: Sports
 
 	var body: some View {
@@ -176,7 +142,6 @@ struct MLActivityButtons: View {
 					.foregroundColor( sports.selectedActivity == activity.type ? .white : .primary )
 					.cornerRadius(10)
 				}
-				//.disabled(session.state == .running)
 			}
 		}
 	}
@@ -213,9 +178,7 @@ struct MLObjectHeader: View {
 						.foregroundStyle(.blue)
 						.frame(width: chipHeight, height: chipHeight)
 					Text(obj.trainingType == .distance ? "Distance:" : "Interval:")
-						//.foregroundColor(.black)
 					Text(obj.trainingType == .distance ? "\(obj.distance)km" : "\(obj.setDuration)min")
-						//.foregroundColor(.black)
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.font(.subheadline)
@@ -229,7 +192,6 @@ struct MLObjectHeader: View {
 						.foregroundStyle(.blue)
 						.frame(width: chipHeight, height: chipHeight)
 					Text("\(obj.sets) sets ")
-						//.foregroundColor(.black)
 				}
 				.frame(maxWidth: .infinity, alignment: .trailing)
 				.font(.subheadline)
@@ -254,7 +216,6 @@ struct MLObjectFooter: View {
 					.scaledToFit()
 					.frame(width: chipHeight, height: chipHeight)
 					.padding()
-					//.foregroundColor()
 			}
 			.background(.ultraThinMaterial, in: Circle())
 			.overlay(
@@ -270,13 +231,14 @@ struct MLObjectFooter: View {
 				try? MLTrainingObject.reset(type: activity)
 				if let newObj = try? MLTrainingObject.load(type: activity) {
 					obj.update(from: newObj)
+					// Ensure export is rewritten after reset
+					try? obj.writeExport()
 				}}) {
 				Image(systemName: "arrow.trianglehead.clockwise")
 					.resizable()
 					.scaledToFit()
 					.frame(width: chipHeight, height: chipHeight)
 					.padding()
-					//.foregroundColor()
 			}
 			.background(.ultraThinMaterial, in: Circle())
 			.overlay(
@@ -309,7 +271,6 @@ struct mlObjectView: View {
 					Text("\(countText)  •  \(freqText)")
 				}
 				.font(.subheadline.weight(.semibold))
-				//.padding(.horizontal, 10)
 				.frame(height: chipHeight)
 				.frame(maxWidth: .infinity, alignment: .center)
 				.foregroundColor(.white)
@@ -350,6 +311,8 @@ struct FatigueSelector: View {
 								sessionsForLocation[sessIdx] = updatedSession
 								obj.sessions[location] = sessionsForLocation
 								try? obj.save()
+								// Keep export updated on fatigue edits
+								try? obj.writeExport()
 							}
 						}) {
 							Image(systemName: level.iconName)
@@ -382,7 +345,7 @@ struct FatigueSelector: View {
 			}
 			.frame(maxWidth: .infinity)
 		}
-		.frame(height: 80) // Adjust as needed
+		.frame(height: 80)
 		.padding(.vertical)
 	}
 }
@@ -412,21 +375,21 @@ extension MLTrainingObject {
 	static var preview: MLTrainingObject {
 		let sessionA = mlTrainingSession(
 			id: UUID(),
-			data: Data(), // or mock data
+			data: Data(),
 			fatigue: .moderate
 		)
 		let sessionB = mlTrainingSession(
 			id: UUID(),
-			data: Data(), // or mock data
+			data: Data(),
 			fatigue: .exhausted
 		)
 		let sessionC = mlTrainingSession(
 			id: UUID(),
-			data: Data(), // or mock data
+			data: Data(),
 			fatigue: .fresh
 		)
 		return MLTrainingObject(
-			type: .running, // or any ActivityType you want
+			type: .running,
 			sessions: [.leftfoot: [sessionC, sessionB, sessionA], .rightfoot: [sessionC, sessionB, sessionA]],
 			distance: 5,
 			sets: 2,
@@ -437,15 +400,12 @@ extension MLTrainingObject {
 
 
 #Preview {
-	// Set up preview data
 	let previewObj = MLTrainingObject.preview
-	try? previewObj.save() // Overwrite the file for .running
+	try? previewObj.save()
 
 	let sports = Sports()
 	sports.selectedActivity = .running
 
 	return ExploreAIView(sports: sports, mlObject: previewObj)
 		.environmentObject(BLEManager.shared)
-		//.environment(\.colorScheme, .dark)
-		//.environment(\.locale, .init(identifier: "en"))
 }
