@@ -5,7 +5,6 @@
 //  Created by Platts Andrew on 13/01/2026.
 //
 
-
 import SwiftUI
 import SwiftData
 import CoreBluetooth
@@ -16,7 +15,7 @@ extension CommandState {
 		case .cmd_state_off: return "powersleep"
 		case .cmd_state_idle: return "stop.fill"
 		case .cmd_state_running: return "play.fill"
-		case .cmd_state_location: return "dot.scope" //"location.fill"
+		case .cmd_state_location: return "dot.scope"
 		case .cmd_state_snapshot: return "recordingtape"
 		case .unknown: return "questionmark"
 		}
@@ -82,7 +81,7 @@ enum BatteryState: CaseIterable {
 		case .full:          return "Full"
 		}
 	}
-	
+
 	var color: Color {
 		switch self {
 		case .unknown:       return .gray
@@ -93,20 +92,18 @@ enum BatteryState: CaseIterable {
 		case .full:          return .green
 		}
 	}
-	
 }
 
 struct DeviceManager: View {
-	
+
 	@ObservedObject var ble: BLEManager
 	@Environment(Session.self) var session
 	@Environment(\.modelContext) var modelContext
-	
+
 	@Query(sort: \KnownDevice.lastConnectedAt, order: .reverse) private var knownDevices: [KnownDevice]
-	
+
 	@State private var boxes: [KnownDevice?] = []
-	
-	
+
 	@State private var draggingIndex: Int? = nil
 	@GestureState private var dragOffset: CGSize = .zero
 	@State private var lastKnownCommandStates: [UUID: CommandState] = [:]
@@ -128,7 +125,7 @@ struct DeviceManager: View {
 			.onChange(of: ble.sessionsByPeripheral) { _, _ in updateBoxes() }
 			.onChange(of: ble.connectedPeripherals) { _, _ in updateBoxes() }
 	}
-	
+
 	private var deviceBoxesView: some View {
 		GeometryReader { geometry in
 			let spacing: CGFloat = 16
@@ -146,8 +143,7 @@ struct DeviceManager: View {
 		}
 		.frame(height: 120)
 	}
-	
-	// Helper function for each box
+
 	private func deviceBoxGroup(idx: Int, device: KnownDevice?, boxSize: CGFloat) -> some View {
 		ZStack(alignment: .topTrailing) {
 			Group {
@@ -158,13 +154,12 @@ struct DeviceManager: View {
 				}
 			}
 			.frame(width: boxSize, height: boxSize)
-			//.offset(y: -10)
-			
+
 			if let device, ble.connectedPeripherals.contains(where: { $0.identifier == device.uuid }) {
 				let cmd = ble.sessionsByPeripheral[device.uuid]?.data.commandState ?? .unknown
 				commandNotification(cmd, idx)
 			}
-			
+
 		}
 		.frame(width: boxSize, height: boxSize)
 		.background(
@@ -200,7 +195,6 @@ struct DeviceManager: View {
 						withAnimation {
 							boxes.move(fromOffsets: IndexSet(integer: idx), toOffset: newIndex > idx ? newIndex + 1 : newIndex)
 						}
-						// Swap locations between the two devices
 						let locA = locationForIndex(idx)
 						let locB = locationForIndex(newIndex)
 						if let deviceA = boxes[newIndex], let sessionA = ble.sessionsByPeripheral[deviceA.uuid] {
@@ -215,68 +209,44 @@ struct DeviceManager: View {
 		)
 		.disabled(session.state != .stopped)
 	}
-	
+
 	private func initializeBoxes() {
 		let deviceBoxes = knownDevices.prefix(maxBoxes).map { Optional($0) }
 		let emptyBoxes = Array(repeating: Optional<KnownDevice>.none, count: maxBoxes - deviceBoxes.count)
 		boxes = deviceBoxes + emptyBoxes
 	}
 
-	// Remove the boxes assignment from updateBoxes()
-	private func OLDupdateBoxes() {
-		// Do NOT reassign boxes here!
-		// Only update locations to ensure uniqueness
-		var locationToDevice: [Location: UUID] = [:]
-		for (idx, device) in boxes.enumerated() {
-			let loc = locationForIndex(idx)
-			if let device, let peripheralSession = ble.sessionsByPeripheral[device.uuid] {
-				peripheralSession.location = loc
-				locationToDevice[loc] = device.uuid
-			}
-		}
-		for (uuid, session) in ble.sessionsByPeripheral {
-			if let loc = session.location, locationToDevice[loc] != uuid {
-				session.location = nil
-			}
-		}
-	}
-	
 	private func updateBoxes() {
-		// Track which locations are already assigned
 		var assignedLocations: Set<Location> = []
-		// First, assign locations to devices in boxes if not already set
 		for (idx, device) in boxes.enumerated() {
 			let loc = locationForIndex(idx)
 			if let device, let peripheralSession = ble.sessionsByPeripheral[device.uuid] {
-				// Only assign if not already set or if location is taken by another device
 				if peripheralSession.location != loc && !assignedLocations.contains(loc) {
 					peripheralSession.location = loc
 				}
 				assignedLocations.insert(loc)
 			}
 		}
-		// Remove locations from devices not in boxes
 		for (uuid, session) in ble.sessionsByPeripheral {
 			if !boxes.contains(where: { $0?.uuid == uuid }) {
 				session.location = nil
 			}
 		}
 	}
-	
+
 	private func locationForIndex(_ idx: Int) -> Location {
 		switch idx {
 		case 0: return .leftfoot
 		case 1: return .rightfoot
 		case 2: return .lefthand
 		case 3: return .righthand
-		default: return .leftfoot // fallback
+		default: return .leftfoot
 		}
 	}
-	
+
 	private func commandNotification( _ cmd: CommandState, _ idx: Int) -> some View {
 		ZStack {
-			Circle()
-				.fill(cmd.color)
+			Circle().fill(cmd.color)
 			Image(systemName: cmd.iconName)
 				.font(.system(size: 16, weight: .bold))
 				.foregroundStyle(.white)
@@ -286,9 +256,9 @@ struct DeviceManager: View {
 		.shadow(radius: 2)
 		.accessibilityLabel("Status")
 	}
-	
+
 	private struct DeviceInfoRotator: View {
-		@ObservedObject var ble: BLEManager // <-- Add this
+		@ObservedObject var ble: BLEManager
 		let pages: [AnyView]
 		let interval: TimeInterval
 		@State private var timer: Timer? = nil
@@ -299,10 +269,6 @@ struct DeviceManager: View {
 				if !pages.isEmpty {
 					pages[pageIndex % pages.count]
 						.id(pageIndex % pages.count)
-						//.transition(.asymmetric(
-						//	insertion: .move(edge: .top).combined(with: .opacity),
-						//	removal: .move(edge: .bottom).combined(with: .opacity)
-						//))
 						.transition(.opacity)
 				}
 			}
@@ -339,17 +305,17 @@ struct DeviceManager: View {
 		} else if isDeviceDiscovered(device.uuid) {
 			color = .green.opacity(0.5)
 		} else {
-			color = .orange.opacity(0.5) // amber for known but not discovered/connected
+			color = .orange.opacity(0.5)
 		}
-		
+
 		let batteryState = isDeviceConnected(device.uuid)
 			? BatteryState(percent: Int(ble.sessionsByPeripheral[device.uuid]?.data.batteryPercent ?? 0))
 			: BatteryState(percent: nil)
-		
+
 		let sampleRate = isDeviceConnected(device.uuid)
 			? Int(ble.sessionsByPeripheral[device.uuid]?.data.sampleRate ?? 0)
 			: nil
-		
+
 		var pages: [AnyView] {
 			var result: [AnyView] = []
 			if isDeviceConnected(device.uuid) {
@@ -362,13 +328,12 @@ struct DeviceManager: View {
 					.foregroundColor(batteryState.color)
 				))
 			}
-			// Always add sparkles as a page
 			result.append(AnyView(Text(device.uuid.uuidString.suffix(4))
 				.font(.system(size: 14, weight: .semibold))
-				   .foregroundColor(.secondary)),)
+				.foregroundColor(.secondary)))
 			return result
 		}
-		
+
 		return ZStack {
 			VStack(spacing: 0) {
 				Image(systemName: watermarkImage(for: idx))
@@ -389,32 +354,17 @@ struct DeviceManager: View {
 			}
 		}
 		.onTapGesture(count: 1) {
-			// Only trigger connect/disconnect on tap, not during view update
 			handleConnectDisconnect(device)
 		}
 	}
-	
-	private func noDeviceBox(_ idx: Int) -> some View {
 
+	private func noDeviceBox(_ idx: Int) -> some View {
 		let pages: [AnyView] = [
 			AnyView(Text("----")
 				.font(.system(size: 14, weight: .semibold))
-				.foregroundColor(.secondary)),
-			
-			//AnyView(Text("--%")
-			//	.font(.system(size: 14, weight: .semibold))
-			//	.foregroundColor(.secondary)),
-			
-			//AnyView(Image(systemName: BatteryState.unknown.iconName)
-			//	.font(.system(size: 16, weight: .semibold))
-			//	.frame(width: 56, height: 56)
-			//	.foregroundColor(BatteryState.unknown.color)),
-					
-			//AnyView(Text("--Hz")
-			//	.font(.system(size: 14, weight: .semibold))
-			//	.foregroundColor(.secondary))
+				.foregroundColor(.secondary))
 		]
-		
+
 		return ZStack {
 			VStack(spacing: 0) {
 				Image(systemName: watermarkImage(for: idx))
@@ -430,9 +380,8 @@ struct DeviceManager: View {
 			}
 		}
 	}
-	
-	private func watermarkImage(for idx: Int) -> String {
 
+	private func watermarkImage(for idx: Int) -> String {
 		switch idx {
 		case 0, 1:
 			return "shoe.fill"

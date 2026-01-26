@@ -20,45 +20,24 @@ struct ExploreAIView: View {
 	var body: some View {
 		VStack(alignment: .center, spacing: 16) {
 			MLActivityButtons(sports: sports)
-			
-			ScrollView(){
+
+			ScrollView() {
 				MLObjectHeader(obj: mlObject)
 					.padding()
-					.background(
-						GeometryReader { geometry in
-							ZStack {
-							}
-							.clipShape(RoundedRectangle(cornerRadius: 14))
-						}
-					)
 					.overlay(
 						RoundedRectangle(cornerRadius: 14)
 							.strokeBorder(Color.primary.opacity(0.5))
 					)
-				
+
 				if mlObject.sessions.values.flatMap({ $0 }).isEmpty {
 					NoMLTraingObjectSessions()
 						.padding()
-						.background(
-							GeometryReader { geometry in
-								ZStack {
-								}
-								.clipShape(RoundedRectangle(cornerRadius: 14))
-							}
-						)
 						.overlay(
 							RoundedRectangle(cornerRadius: 14)
 								.strokeBorder(Color.primary.opacity(0.5))
 						)
 					MLObjectFooter(obj: mlObject)
 						.padding()
-						.background(
-							GeometryReader { geometry in
-								ZStack {
-								}
-								.clipShape(RoundedRectangle(cornerRadius: 14))
-							}
-						)
 						.overlay(
 							RoundedRectangle(cornerRadius: 14)
 								.strokeBorder(Color.primary.opacity(0.5))
@@ -66,26 +45,12 @@ struct ExploreAIView: View {
 				} else {
 					mlObjectView(obj: mlObject)
 						.padding()
-						.background(
-							GeometryReader { geometry in
-								ZStack {
-								}
-								.clipShape(RoundedRectangle(cornerRadius: 14))
-							}
-						)
 						.overlay(
 							RoundedRectangle(cornerRadius: 14)
 								.strokeBorder(Color.primary.opacity(0.5))
 						)
 					MLObjectFooter(obj: mlObject)
 						.padding()
-						.background(
-							GeometryReader { geometry in
-								ZStack {
-								}
-								.clipShape(RoundedRectangle(cornerRadius: 14))
-							}
-						)
 						.overlay(
 							RoundedRectangle(cornerRadius: 14)
 								.strokeBorder(Color.primary.opacity(0.5))
@@ -96,7 +61,6 @@ struct ExploreAIView: View {
 		.padding()
 		.frame(maxHeight: .infinity, alignment: .top)
 		.onAppear {
-			// Keep local selection in sync; Session handles loading/updating the object.
 			let activity = sports.selectedActivity
 			if selectedActivity != activity {
 				selectedActivity = activity
@@ -105,15 +69,13 @@ struct ExploreAIView: View {
 			try? mlObject.writeExport()
 		}
 		.onChange(of: sports.selectedActivity) { _, newValue in
-			// Only reflect selection; ML object loading is handled by Session.
 			selectedActivity = newValue
 		}
 		.onChange(of: mlObject.sessions) { _, _ in
 			// Rewrite export when session data changes
 			try? mlObject.writeExport()
 		}
-		.onChange(of: mlObject) { _, newValue in
-			print("[ExploreAIView] mlObject properties changed:", newValue)
+		.onChange(of: mlObject) { _, _ in
 			// Defensive: keep export fresh after wholesale object updates
 			try? mlObject.writeExport()
 		}
@@ -183,9 +145,9 @@ struct MLObjectHeader: View {
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.font(.subheadline)
 				.foregroundStyle(.secondary)
-				
+
 				Spacer()
-				
+
 				HStack(spacing: 6){
 					Image(systemName: "chart.xyaxis.line")
 						.font(.system(size: chipHeight, weight: .semibold))
@@ -209,7 +171,6 @@ struct MLObjectFooter: View {
 
 	var body: some View {
 		HStack(){
-					
 			ShareLink(item: obj.exportURL) {
 				Image(systemName: "square.and.arrow.up")
 					.resizable()
@@ -223,9 +184,9 @@ struct MLObjectFooter: View {
 					.stroke(Color.white.opacity(0.2), lineWidth: 1)
 			)
 			.shadow(radius: 8)
-			
+
 			Spacer()
-			
+
 			Button(action: {
 				let activity = obj.type
 				try? MLTrainingObject.reset(type: activity)
@@ -246,7 +207,7 @@ struct MLObjectFooter: View {
 					.stroke(Color.white.opacity(0.2), lineWidth: 1)
 			)
 			.shadow(radius: 8)
-			
+
 		}
 		.padding()
 	}
@@ -254,17 +215,17 @@ struct MLObjectFooter: View {
 
 struct mlObjectView: View {
 	@ObservedObject var obj: MLTrainingObject
-	
+
 	var chipHeight: CGFloat = 35
 
 	var body: some View {
 		ForEach(obj.sessions.sorted(by: { $0.key.displayName < $1.key.displayName }), id: \.key) { location, sessions in
 			VStack(alignment: .leading, spacing: 20) {
-				
+
 				let freq = sessions.averageFrequencyHz ?? 0.0
 				let countText = "\(sessions.count)/\(obj.sets)"
 				let freqText = String(format: "%.1f Hz", freq)
-				
+
 				HStack(spacing: 6) {
 					location.iconView
 					Text("\(location.displayName)")
@@ -276,7 +237,7 @@ struct mlObjectView: View {
 				.foregroundColor(.white)
 				.background(Capsule().fill((Color.blue).opacity(1)))
 				.overlay(Capsule().stroke((Color.blue).opacity(1)))
-				
+
 				VStack(spacing: 20) {
 					ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
 						FatigueSelector(obj: obj, location: location, session: session, index: index)
@@ -284,7 +245,7 @@ struct mlObjectView: View {
 				}
 				.font(.caption)
 				.foregroundColor(.secondary)
-				
+
 			}
 		}
 	}
@@ -311,7 +272,6 @@ struct FatigueSelector: View {
 								sessionsForLocation[sessIdx] = updatedSession
 								obj.sessions[location] = sessionsForLocation
 								try? obj.save()
-								// Keep export updated on fatigue edits
 								try? obj.writeExport()
 							}
 						}) {
