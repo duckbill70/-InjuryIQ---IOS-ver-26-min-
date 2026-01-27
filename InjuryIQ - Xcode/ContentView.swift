@@ -130,33 +130,47 @@ struct ContentView: View {
 	}
 	
 	private var activityButtons: some View {
-		HStack(spacing: 12) {
-			ForEach(ActivityButton.activities) { activity in
-				Button(
-					action: { sports.selectedActivity = activity.type }
-				) {
-					VStack {
-						Image(systemName: activity.icon)
-							.font(.title2)
-						Text(activity.name)
-							.font(.caption)
+		
+		
+		ScrollViewReader { proxy in
+			ScrollView(.horizontal, showsIndicators: false) {
+				HStack(spacing: 12) {
+					ForEach(ActivityButton.activities) { activity in
+						Button(
+							action: { sports.selectedActivity = activity.type }
+						) {
+							VStack {
+								Image(systemName: activity.icon)
+									.font(.title2)
+								Text(activity.name)
+									.font(.caption)
+							}
+							.frame(width: 50, height: 50)
+							.padding()
+							.background(
+								sports.selectedActivity == activity.type
+								? activity.selectedColor
+								: activity.unselectedColor
+							)
+							.opacity(session.state == .running ? 0.5 : 1.0)
+							.foregroundColor(
+								sports.selectedActivity == activity.type
+								? .white
+								: .primary
+							)
+							.cornerRadius(10)
+						}
+						.disabled(session.state == .running)
+						.id(activity.type)
 					}
-					.frame(maxWidth: .infinity, minHeight: 50)
-					.padding()
-					.background(
-						sports.selectedActivity == activity.type
-						? activity.selectedColor
-						: activity.unselectedColor
-					)
-					.opacity(session.state == .running ? 0.5 : 1.0)
-					.foregroundColor(
-						sports.selectedActivity == activity.type
-						? .white
-						: .primary
-					)
-					.cornerRadius(10)
 				}
-				.disabled(session.state == .running)
+				.padding(0)
+				.onAppear {
+					proxy.scrollTo(sports.selectedActivity, anchor: .center)
+				}
+				.onChange(of: sports.selectedActivity) { _, newValue in
+					proxy.scrollTo(newValue, anchor: .center)
+				}
 			}
 		}
 	}

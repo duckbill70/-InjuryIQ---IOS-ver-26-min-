@@ -91,13 +91,13 @@ struct mlTrainingSession: Codable, Identifiable, Equatable, CustomStringConverti
 		self.recomputeCache()
 	}
 
-	// Decoding/encoding must include cached fields for correctness across saves
 	enum CodingKeys: String, CodingKey {
 		case id, data, fatigue, cachedDataPointsCount, cachedFrequencyHz
 	}
 
 	mutating func recomputeCache() {
-		// Decode minimally to compute count/frequency
+		// Decode minimally to compute count/frequency off-main if called from background,
+		// but keep it simple here; callers (like export) are off-main.
 		let points: [MLDataPoint]
 		if let decoded = try? JSONDecoder().decode([MLDataPoint].self, from: data) {
 			points = decoded
@@ -113,10 +113,10 @@ struct mlTrainingSession: Codable, Identifiable, Equatable, CustomStringConverti
 		}
 	}
 
-	// Existing helpers now use cached values
 	var dataPointsCount: Int { cachedDataPointsCount }
 
 	var dataPoints: [MLDataPoint] {
+		// If you call this from UI, it will decode; prefer using cachedDataPointsCount/frequencyHz where possible.
 		(try? JSONDecoder().decode([MLDataPoint].self, from: data)) ?? []
 	}
 
@@ -159,6 +159,10 @@ class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equa
 	@Published var distance: Int
 	@Published var sets: Int
 	@Published var setDuration: Int
+
+	// Debounced export task
+	private var exportTask: Task<Void, Never>?
+	private let exportDebounceInterval: Duration = .milliseconds(350)
 
 	enum CodingKeys: String, CodingKey {
 		case uuid
@@ -229,7 +233,6 @@ class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equa
 	static func reset(type: ActivityType) throws {
 		let obj = MLTrainingObject(type: type)
 		try obj.save()
-		// Clear or rewrite the export so there is no stale file
 		do {
 			try obj.deleteExport()
 		} catch {
@@ -243,7 +246,6 @@ class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equa
 		if FileManager.default.fileExists(atPath: url.path) {
 			try FileManager.default.removeItem(at: url)
 		}
-		// Also delete export file for completeness
 		let temp = MLTrainingObject(type: type)
 		try? temp.deleteExport()
 	}
@@ -270,11 +272,41 @@ class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equa
 		try data.write(to: exportURL, options: .atomic)
 	}
 
+	// Async/off-main export writing
+	func writeExportAsync() async {
+		// Snapshot self on main actor to avoid concurrent mutation issues
+		let snapshot: MLTrainingObject = await MainActor.run { self }
+		await Task.detached(priority: .utility) {
+			do {
+				let export = MLTrainingExport(from: snapshot)
+				let data = try export.toJSONData()
+				try data.write(to: snapshot.exportURL, options: .atomic)
+			} catch {
+				print("[MLTrainingObject] writeExportAsync error: \(error)")
+			}
+		}.value
+	}
+
 	func deleteExport() throws {
 		let url = exportURL
 		if FileManager.default.fileExists(atPath: url.path) {
 			try FileManager.default.removeItem(at: url)
 		}
+	}
+
+	// Debounced export: coalesce rapid calls within exportDebounceInterval
+	func debounceExport() {
+		exportTask?.cancel()
+		exportTask = Task { [weak self] in
+			guard let self else { return }
+			try? await Task.sleep(for: exportDebounceInterval)
+			await self.writeExportAsync()
+		}
+	}
+
+	func cancelDebouncedExport() {
+		exportTask?.cancel()
+		exportTask = nil
 	}
 
 	// MARK: - Session helpers

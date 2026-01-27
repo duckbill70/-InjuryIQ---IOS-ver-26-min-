@@ -14,6 +14,7 @@ public enum ActivityType: String, Codable, CaseIterable {
 	case hiking = "Hiking"
 	case racket = "Racket"
 	case cycling = "Cycling"
+	case skiing = "Skiing"
 }
 
 public enum MLTrainingType {
@@ -33,25 +34,31 @@ struct ActivityButton: Identifiable {
 		ActivityButton(
 			type: .running,
 			icon: ActivityType.running.icon,
-			selectedColor: .blue,
+			selectedColor: ActivityType.running.activityColor,
 			unselectedColor: Color(.systemGray6)
 		),
 		ActivityButton(
 			type: .hiking,
 			icon: ActivityType.hiking.icon,
-			selectedColor: .blue,
+			selectedColor: ActivityType.hiking.activityColor,
 			unselectedColor: Color(.systemGray6)
 		),
 		ActivityButton(
 			type: .racket,
 			icon: ActivityType.racket.icon,
-			selectedColor: .blue,
+			selectedColor: ActivityType.racket.activityColor,
 			unselectedColor: Color(.systemGray6)
 		),
 		ActivityButton(
 			type: .cycling,
 			icon: ActivityType.cycling.icon,
-			selectedColor: .blue,
+			selectedColor: ActivityType.cycling.activityColor,
+			unselectedColor: Color(.systemGray6)
+		),
+		ActivityButton(
+			type: .skiing,
+			icon: ActivityType.skiing.icon,
+			selectedColor: ActivityType.skiing.activityColor,
 			unselectedColor: Color(.systemGray6)
 		)
 	]
@@ -65,6 +72,7 @@ extension ActivityType {
 		case .hiking: return "Hiking"
 		case .racket: return "Racket"
 		case .cycling: return "Cycling"
+		case .skiing: return "Skiing"
 		}
 	}
 	
@@ -74,6 +82,7 @@ extension ActivityType {
 		case .hiking: return "figure.hiking"
 		case .racket: return "figure.tennis"
 		case .cycling: return "figure.outdoor.cycle"
+		case .skiing: return "figure.skiing.downhill"
 		}
 	}
 	
@@ -83,6 +92,7 @@ extension ActivityType {
 		case .hiking: return .black
 		case .racket: return .mint
 		case .cycling: return .red
+		case .skiing: return .green
 		}
 	}
 	
@@ -92,6 +102,7 @@ extension ActivityType {
 		case .hiking: return 10
 		case .racket: return 0
 		case .cycling: return 10
+		case .skiing: return 0
 		}
 	}
 	
@@ -101,6 +112,7 @@ extension ActivityType {
 		case .hiking: return 3
 		case .racket: return 3
 		case .cycling: return 3
+		case .skiing: return 3
 		}
 	}
 	
@@ -108,8 +120,9 @@ extension ActivityType {
 		switch self {
 		case .running: return 0
 		case .hiking: return 0
-		case .racket: return 3
+		case .racket: return 60
 		case .cycling: return 0
+		case .skiing: return 120
 		}
 	}
 	
@@ -119,6 +132,7 @@ extension ActivityType {
 		case .hiking: return .distance
 		case .racket: return .duration
 		case .cycling: return .distance
+		case .skiing: return .duration
 		}
 	}
 	
@@ -128,6 +142,7 @@ extension ActivityType {
 			case .hiking: return [Location.leftfoot, Location.rightfoot]
 			case .racket: return [Location.leftfoot, Location.rightfoot] ///Furture are left and right hands
 			case .cycling: return [Location.leftfoot, Location.rightfoot]
+			case .skiing: return [Location.leftfoot, Location.rightfoot]
 		}
 	}
 	

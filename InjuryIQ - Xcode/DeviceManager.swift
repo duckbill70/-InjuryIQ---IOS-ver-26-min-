@@ -145,69 +145,77 @@ struct DeviceManager: View {
 	}
 
 	private func deviceBoxGroup(idx: Int, device: KnownDevice?, boxSize: CGFloat) -> some View {
-		ZStack(alignment: .topTrailing) {
-			Group {
-				if let device = device {
-					deviceBox(device, idx)
-				} else {
-					noDeviceBox(idx)
+		
+		GeometryReader { geometry in
+			ZStack(alignment: .topTrailing) {
+				Group {
+					if let device = device {
+						deviceBox(device, idx)
+					} else {
+						noDeviceBox(idx)
+					}
 				}
+				.frame(width: boxSize, height: boxSize)
+				
+				Text(device?.uuid.uuidString.isEmpty == false ? String(device!.uuid.uuidString.suffix(4)) : "????")
+					.position(x: geometry.size.width / 3, y: 0)
+					.font(.system(size: 14, weight: .semibold))
+					.foregroundColor(.secondary)
+				
+				if let device, ble.connectedPeripherals.contains(where: { $0.identifier == device.uuid }) {
+					let cmd = ble.sessionsByPeripheral[device.uuid]?.data.commandState ?? .unknown
+					commandNotification(cmd, idx)
+				}
+				
 			}
 			.frame(width: boxSize, height: boxSize)
-
-			if let device, ble.connectedPeripherals.contains(where: { $0.identifier == device.uuid }) {
-				let cmd = ble.sessionsByPeripheral[device.uuid]?.data.commandState ?? .unknown
-				commandNotification(cmd, idx)
-			}
-
+			.background(
+				RoundedRectangle(cornerRadius: 16)
+					.fill(Color(.secondarySystemBackground))
+			)
+			.overlay(
+				RoundedRectangle(cornerRadius: 16)
+					.strokeBorder(Color.primary.opacity(0.08))
+			)
+			.opacity(draggingIndex == idx ? 0.5 : 1)
+			.offset(x: draggingIndex == idx ? dragOffset.width : 0)
+			.zIndex(draggingIndex == idx ? 1 : 0)
+			.gesture(
+				DragGesture()
+					.updating($dragOffset) { value, state, _ in
+						if draggingIndex == idx {
+							state = value.translation
+						}
+					}
+					.onChanged { _ in
+						draggingIndex = idx
+					}
+					.onEnded { value in
+						let threshold = boxSize + 16 / 2
+						var newIndex = idx
+						if value.translation.width > threshold, idx < boxes.count - 1 {
+							newIndex = idx + 1
+						} else if value.translation.width < -threshold, idx > 0 {
+							newIndex = idx - 1
+						}
+						if newIndex != idx {
+							withAnimation {
+								boxes.move(fromOffsets: IndexSet(integer: idx), toOffset: newIndex > idx ? newIndex + 1 : newIndex)
+							}
+							let locA = locationForIndex(idx)
+							let locB = locationForIndex(newIndex)
+							if let deviceA = boxes[newIndex], let sessionA = ble.sessionsByPeripheral[deviceA.uuid] {
+								sessionA.location = locB
+							}
+							if let deviceB = boxes[idx], let sessionB = ble.sessionsByPeripheral[deviceB.uuid] {
+								sessionB.location = locA
+							}
+						}
+						draggingIndex = nil
+					}
+			)
+			.disabled(session.state != .stopped)
 		}
-		.frame(width: boxSize, height: boxSize)
-		.background(
-			RoundedRectangle(cornerRadius: 16)
-				.fill(Color(.secondarySystemBackground))
-		)
-		.overlay(
-			RoundedRectangle(cornerRadius: 16)
-				.strokeBorder(Color.primary.opacity(0.08))
-		)
-		.opacity(draggingIndex == idx ? 0.5 : 1)
-		.offset(x: draggingIndex == idx ? dragOffset.width : 0)
-		.zIndex(draggingIndex == idx ? 1 : 0)
-		.gesture(
-			DragGesture()
-				.updating($dragOffset) { value, state, _ in
-					if draggingIndex == idx {
-						state = value.translation
-					}
-				}
-				.onChanged { _ in
-					draggingIndex = idx
-				}
-				.onEnded { value in
-					let threshold = boxSize + 16 / 2
-					var newIndex = idx
-					if value.translation.width > threshold, idx < boxes.count - 1 {
-						newIndex = idx + 1
-					} else if value.translation.width < -threshold, idx > 0 {
-						newIndex = idx - 1
-					}
-					if newIndex != idx {
-						withAnimation {
-							boxes.move(fromOffsets: IndexSet(integer: idx), toOffset: newIndex > idx ? newIndex + 1 : newIndex)
-						}
-						let locA = locationForIndex(idx)
-						let locB = locationForIndex(newIndex)
-						if let deviceA = boxes[newIndex], let sessionA = ble.sessionsByPeripheral[deviceA.uuid] {
-							sessionA.location = locB
-						}
-						if let deviceB = boxes[idx], let sessionB = ble.sessionsByPeripheral[deviceB.uuid] {
-							sessionB.location = locA
-						}
-					}
-					draggingIndex = nil
-				}
-		)
-		.disabled(session.state != .stopped)
 	}
 
 	private func initializeBoxes() {
@@ -328,7 +336,10 @@ struct DeviceManager: View {
 					.foregroundColor(batteryState.color)
 				))
 			}
-			result.append(AnyView(Text(device.uuid.uuidString.suffix(4))
+			//result.append(AnyView(Text(device.uuid.uuidString.suffix(4))
+			//	.font(.system(size: 14, weight: .semibold))
+			//	.foregroundColor(.secondary)))
+			result.append(AnyView(Text("----")
 				.font(.system(size: 14, weight: .semibold))
 				.foregroundColor(.secondary)))
 			return result

@@ -7,6 +7,7 @@ import Combine
 struct ExploreAIView: View {
 	@EnvironmentObject private var ble: BLEManager
 	@Environment(\.modelContext) var modelContext
+	@Environment(Session.self) var session
 	@Bindable var sports: Sports
 	@ObservedObject var mlObject: MLTrainingObject
 	@State private var selectedActivity: ActivityType
@@ -20,10 +21,11 @@ struct ExploreAIView: View {
 	var body: some View {
 		VStack(alignment: .center, spacing: 16) {
 			MLActivityButtons(sports: sports)
+				.padding(0)
+				//.padding(.top)
 
 			ScrollView() {
 				MLObjectHeader(obj: mlObject)
-					.padding()
 					.overlay(
 						RoundedRectangle(cornerRadius: 14)
 							.strokeBorder(Color.primary.opacity(0.5))
@@ -65,19 +67,19 @@ struct ExploreAIView: View {
 			if selectedActivity != activity {
 				selectedActivity = activity
 			}
-			// Ensure export reflects current object when view appears
-			try? mlObject.writeExport()
+			// Ensure export reflects current object when view appears (debounced)
+			mlObject.debounceExport()
 		}
 		.onChange(of: sports.selectedActivity) { _, newValue in
 			selectedActivity = newValue
 		}
 		.onChange(of: mlObject.sessions) { _, _ in
-			// Rewrite export when session data changes
-			try? mlObject.writeExport()
+			// Coalesce export writes when session data changes
+			mlObject.debounceExport()
 		}
 		.onChange(of: mlObject) { _, _ in
 			// Defensive: keep export fresh after wholesale object updates
-			try? mlObject.writeExport()
+			mlObject.debounceExport()
 		}
 	}
 }
@@ -85,25 +87,37 @@ struct ExploreAIView: View {
 
 struct MLActivityButtons: View {
 	@Bindable var sports: Sports
+	@Environment(Session.self) var session
 
 	var body: some View {
-		HStack(spacing: 12) {
-			ForEach(ActivityButton.activities) { activity in
-				Button {
-					sports.selectedActivity = activity.type
-				} label: {
-					VStack {
-						Image(systemName: activity.icon)
-							.font(.title2)
-						Text(activity.name)
-							.font(.caption)
+		ScrollViewReader { proxy in
+			ScrollView(.horizontal, showsIndicators: false) {
+				HStack(spacing: 12) {
+					ForEach(ActivityButton.activities) { activity in
+						Button {
+							sports.selectedActivity = activity.type
+						} label: {
+							VStack {
+								Image(systemName: activity.icon)
+									.font(.title2)
+								Text(activity.name)
+									.font(.caption)
+							}
+							.frame(width: 50, height: 50)
+							.padding()
+							.background( sports.selectedActivity == activity.type ? activity.selectedColor : activity.unselectedColor )
+							.foregroundColor( sports.selectedActivity == activity.type ? .white : .primary )
+							.cornerRadius(10)
+						}
+						.id(activity.type)
+						.disabled(session.state == .running)
 					}
-					.frame(maxWidth: .infinity, minHeight: 50 )
-					.padding()
-					.background( sports.selectedActivity == activity.type ? activity.selectedColor : activity.unselectedColor )
-					.foregroundColor( sports.selectedActivity == activity.type ? .white : .primary )
-					.cornerRadius(10)
 				}
+			}
+			.padding(0)
+			.onAppear { proxy.scrollTo(sports.selectedActivity, anchor: .center) }
+			.onChange(of: sports.selectedActivity) { _, newValue in
+				proxy.scrollTo(newValue, anchor: .center)
 			}
 		}
 	}
@@ -115,52 +129,56 @@ struct MLObjectHeader: View {
 	var chipHeight: CGFloat = 28
 
 	var body: some View {
-		VStack(spacing: 30) {
-			HStack(spacing: 12) {
-				Image(systemName: obj.type.icon)
-					.font(.system(size: chipHeight, weight: .semibold))
-					.foregroundStyle(obj.type.activityColor)
-					.frame(width: chipHeight, height: chipHeight)
-				VStack(alignment: .leading, spacing: 2) {
-					Text(obj.type.descriptor)
-						.font(.system(size: headerFontSize, weight: .heavy))
+			VStack(spacing: 16) {
+				HStack() {
+					Image(systemName: obj.type.icon)
+						.font(.system(size: chipHeight, weight: .semibold))
+						.foregroundStyle(obj.type.activityColor)
+						.frame(width: chipHeight, height: chipHeight)
+						.padding(.leading, -5)
+						.padding(.trailing, 4)
+					VStack(alignment: .leading, spacing: 2) {
+						Text(obj.type.descriptor)
+							.font(.system(size: headerFontSize, weight: .heavy))
+					}
+					Spacer()
+					Text(obj.active ? "Active" : "Complete")
+						.font(.subheadline.weight(.semibold))
+						.padding(.horizontal, 10)
+						.frame(height: chipHeight)
+						.background(Capsule().fill((obj.active ? Color.green : Color.orange).opacity(0.18)))
+						.overlay(Capsule().stroke((obj.active ? Color.green : Color.orange).opacity(0.35)))
 				}
-				Spacer()
-				Text(obj.active ? "Active" : "Complete")
-					.font(.subheadline.weight(.semibold))
-					.padding(.horizontal, 10)
-					.frame(height: chipHeight)
-					.background(Capsule().fill((obj.active ? Color.green : Color.orange).opacity(0.18)))
-					.overlay(Capsule().stroke((obj.active ? Color.green : Color.orange).opacity(0.35)))
-			}
-			HStack(){
-				HStack(spacing: 6){
+				
+				HStack(){
 					Image(systemName: obj.trainingType == .distance ? "ruler" : "clock")
 						.font(.system(size: chipHeight, weight: .semibold))
 						.foregroundStyle(.blue)
-						.frame(width: chipHeight, height: chipHeight)
+						.frame(width: chipHeight-10, height: chipHeight-10)
+						.padding(.trailing, 10)
 					Text(obj.trainingType == .distance ? "Distance:" : "Interval:")
-					Text(obj.trainingType == .distance ? "\(obj.distance)km" : "\(obj.setDuration)min")
+						.font(.footnote)
+					Text(obj.trainingType == .distance ? "\(obj.distance)km" :"\(obj.setDuration)min")
+						.font(.footnote)
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.font(.subheadline)
 				.foregroundStyle(.secondary)
-
-				Spacer()
-
-				HStack(spacing: 6){
+					//Spacer()
+				HStack(){
 					Image(systemName: "chart.xyaxis.line")
 						.font(.system(size: chipHeight, weight: .semibold))
 						.foregroundStyle(.blue)
-						.frame(width: chipHeight, height: chipHeight)
+						.frame(width: chipHeight-10, height: chipHeight-10)
+						.padding(.trailing, 10)
 					Text("\(obj.sets) sets ")
+						.font(.footnote)
 				}
-				.frame(maxWidth: .infinity, alignment: .trailing)
+				.frame(maxWidth: .infinity, alignment: .leading)
 				.font(.subheadline)
 				.foregroundStyle(.secondary)
-			}
 		}
-		.padding()
+		.padding(20)
 	}
 }
 
@@ -185,15 +203,15 @@ struct MLObjectFooter: View {
 			)
 			.shadow(radius: 8)
 
-			Spacer()
+			//Spacer()
 
 			Button(action: {
 				let activity = obj.type
 				try? MLTrainingObject.reset(type: activity)
 				if let newObj = try? MLTrainingObject.load(type: activity) {
 					obj.update(from: newObj)
-					// Ensure export is rewritten after reset
-					try? obj.writeExport()
+					// Ensure export is updated after reset (debounced)
+					obj.debounceExport()
 				}}) {
 				Image(systemName: "arrow.trianglehead.clockwise")
 					.resizable()
@@ -209,7 +227,7 @@ struct MLObjectFooter: View {
 			.shadow(radius: 8)
 
 		}
-		.padding()
+		//.padding()
 	}
 }
 
@@ -220,7 +238,7 @@ struct mlObjectView: View {
 
 	var body: some View {
 		ForEach(obj.sessions.sorted(by: { $0.key.displayName < $1.key.displayName }), id: \.key) { location, sessions in
-			VStack(alignment: .leading, spacing: 20) {
+			VStack(alignment: .leading, spacing: 0) {
 
 				let freq = sessions.averageFrequencyHz ?? 0.0
 				let countText = "\(sessions.count)/\(obj.sets)"
@@ -238,7 +256,7 @@ struct mlObjectView: View {
 				.background(Capsule().fill((Color.blue).opacity(1)))
 				.overlay(Capsule().stroke((Color.blue).opacity(1)))
 
-				VStack(spacing: 20) {
+				VStack(spacing: 0) {
 					ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
 						FatigueSelector(obj: obj, location: location, session: session, index: index)
 					}
@@ -272,7 +290,8 @@ struct FatigueSelector: View {
 								sessionsForLocation[sessIdx] = updatedSession
 								obj.sessions[location] = sessionsForLocation
 								try? obj.save()
-								try? obj.writeExport()
+								// Debounced export instead of immediate write
+								obj.debounceExport()
 							}
 						}) {
 							Image(systemName: level.iconName)
@@ -362,10 +381,14 @@ extension MLTrainingObject {
 #Preview {
 	let previewObj = MLTrainingObject.preview
 	try? previewObj.save()
-
+	
 	let sports = Sports()
-	sports.selectedActivity = .running
-
+	sports.selectedActivity = .skiing
+	
+	let previewSession = Session(mlTrainingObject: MLTrainingObject(type: .running))
+	previewSession.state = .stopped // Toggle to test disabled state
+	
 	return ExploreAIView(sports: sports, mlObject: previewObj)
 		.environmentObject(BLEManager.shared)
+		.environment(previewSession)
 }
