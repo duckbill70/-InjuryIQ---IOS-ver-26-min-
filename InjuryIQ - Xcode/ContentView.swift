@@ -26,16 +26,33 @@ struct ContentView: View {
 			NavigationStack {
 				VStack(spacing: 16) {
 					
-					activityButtons
-						.padding(.horizontal)
-						.padding(.top)
+					if session.state == .stopped {
+						activityButtons
+							.padding(.horizontal)
+							.padding(.top)
+							.transition(
+								.asymmetric(
+									insertion: .scale(scale: 1, anchor: .center).combined(with: .opacity),
+									removal: .scale(scale: 0.8, anchor: .center).combined(with: .opacity)
+								)
+							)
+					}
 					
 					Spacer()
 					
 					let leftFootSession = ble.sessionsByPeripheral.values.first(where: { $0.location == .leftfoot })
 					let rightFootSession = ble.sessionsByPeripheral.values.first(where: { $0.location == .rightfoot })
+					
+					var iconName : String {
+						switch session.mlTrainingObject.trainingType {
+						case .distance: return "ruler"
+						case .duration: return "timer"
+						}
+					}
 
 					SessionStatusIndicator(
+						leftDeviceStatus: leftDeviceStatusForUI(),
+						rightDeviceStatus: rightDeviceStatusForUI(),
 						leftFatiguePct: leftFootSession?.data.fatiguePercent.map(Double .init),
 						rightFatiguePct: rightFootSession?.data.fatiguePercent.map(Double .init),
 						leftConnected: ble.connectedPeripherals.contains { $0.identifier == leftFootSession?.peripheral.identifier },
@@ -45,10 +62,24 @@ struct ContentView: View {
 						speed: session.currentSpeedKmph,
 						sessionState: session.state,
 						activity: sports.selectedActivity,
-						subtitle: nil
+						subtitle: session.snapshotCountdown,
+						subtitleIconName: iconName
 					)
 					.frame(width: 320)
 					Spacer()
+					
+					if session.state != .stopped {
+						SessionStatsView()
+							.frame(maxWidth: .infinity)
+							.padding(.horizontal)
+							.transition(
+								.asymmetric(
+									insertion: .scale(scale: 1, anchor: .center).combined(with: .opacity),
+									removal: .scale(scale: 0.8, anchor: .center).combined(with: .opacity)
+								)
+							)
+						Spacer()
+					}
 					
 					HStack {
 						DummyButton()
@@ -72,9 +103,18 @@ struct ContentView: View {
 					.padding(.horizontal)
 					
 					Spacer()
-					DeviceManager(ble: ble)
+					if session.state == .stopped {
+						DeviceManager(ble: ble)
+							.transition(
+								.asymmetric(
+									insertion: .scale(scale: 1, anchor: .center).combined(with: .opacity),
+									removal: .scale(scale: 0.8, anchor: .center).combined(with: .opacity)
+								)
+							)
+					}
 					
 				}
+				.animation(.easeInOut(duration: 1.0), value: session.state)
 				.frame(maxWidth: .infinity, maxHeight: .infinity)
 			}
 			.toolbar(.hidden, for: .navigationBar)
@@ -214,6 +254,19 @@ struct ContentView: View {
 	}
 }
 
+private extension ContentView {
+	@MainActor
+	func leftDeviceStatusForUI() -> DeviceStatus? {
+		let left = ble.sessionsByPeripheral.values.first(where: { $0.location == .leftfoot })
+		return left?.data.command.map(DeviceStatus.init(from:))
+	}
+	@MainActor
+	func rightDeviceStatusForUI() -> DeviceStatus? {
+		let right = ble.sessionsByPeripheral.values.first(where: { $0.location == .rightfoot })
+		return right?.data.command.map(DeviceStatus.init(from:))
+	}
+}
+
 #Preview {
 	@Previewable @State var sports = Sports()
 	@Previewable @State var session = Session(mlTrainingObject: MLTrainingObject(type: .running))
@@ -235,3 +288,4 @@ struct ContentView: View {
 			}()
 		)
 }
+

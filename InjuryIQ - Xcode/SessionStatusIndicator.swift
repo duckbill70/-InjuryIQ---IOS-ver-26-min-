@@ -27,6 +27,12 @@ import SwiftUI
 // MARK: - SessionStatusIndicator (Dual fatigue halves)
 
 public struct SessionStatusIndicator: View {
+	
+	///Device Command State
+	public let leftDeviceStatus: DeviceStatus?
+	public let rightDeviceStatus: DeviceStatus?
+	
+	
 	/// Fatigue values as percentages (0...100). If nil => no signal provided.
 	public let leftFatiguePct: Double?
 	public let rightFatiguePct: Double?
@@ -43,6 +49,7 @@ public struct SessionStatusIndicator: View {
 
 	/// Optional label under duration (e.g. "Mild Fatigue")
 	public let subtitle: String?
+	public let subtitleIconName: String?
 
 	// Styling knobs
 	public var ringLineWidth: CGFloat = 16
@@ -55,6 +62,8 @@ public struct SessionStatusIndicator: View {
 	@State private var sweepPhase: CGFloat = 0
 
 	public init(
+		leftDeviceStatus: DeviceStatus?,
+		rightDeviceStatus: DeviceStatus?,
 		leftFatiguePct: Double?,
 		rightFatiguePct: Double?,
 		leftConnected: Bool,
@@ -64,8 +73,11 @@ public struct SessionStatusIndicator: View {
 		speed: Double,
 		sessionState: SessionState,
 		activity: ActivityType,
-		subtitle: String? = nil
+		subtitle: String? = nil,
+		subtitleIconName: String? = nil,
 	) {
+		self.leftDeviceStatus = leftDeviceStatus
+		self.rightDeviceStatus = rightDeviceStatus
 		self.leftFatiguePct = leftFatiguePct
 		self.rightFatiguePct = rightFatiguePct
 		self.leftConnected = leftConnected
@@ -76,6 +88,7 @@ public struct SessionStatusIndicator: View {
 		self.sessionState = sessionState
 		self.activity = activity
 		self.subtitle = subtitle
+		self.subtitleIconName = subtitleIconName
 	}
 
 	public var body: some View {
@@ -159,14 +172,18 @@ public struct SessionStatusIndicator: View {
 				}
 
 				// Optional small dots at bottom for side identity (subtle)
-				HStack(spacing: 12) {
-					Circle().fill(self.leftConnected ? Color.blue : Color.gray.opacity(0.35))
-						.frame(width: 15, height: 15)
-					Circle().fill(self.rightConnected ? Color.blue : Color.gray.opacity(0.35))
-						.frame(width: 15, height: 15)
-				}
-				.offset(y: (size / 2) - ringInset - ringLineWidth - 10)
+				//HStack(spacing: 12) {
+					//Image(systemName: leftDeviceStatus?.symbolName)
+					//	.frame(width: 15, height: 15)
+				//	Circle().fill(self.leftConnected ? Color.blue : Color.gray.opacity(0.35))
+				//		.frame(width: 15, height: 15)
+				//	Circle().fill(self.rightConnected ? Color.blue : Color.gray.opacity(0.35))
+				//		.frame(width: 15, height: 15)
+				//}
+				//.offset(y: (size / 2) - ringInset - ringLineWidth - 10)
 
+				
+				
 				// Center content
 				VStack(spacing: 10) {
 					ZStack {
@@ -189,41 +206,45 @@ public struct SessionStatusIndicator: View {
 						.minimumScaleFactor(0.7)
 						.foregroundStyle(overallDim ? .secondary : .primary)
 					
-					HStack(){
+					//HStack(){
 						//Text(String(format: "%dkm", Int(distance)))
-						Text(String(format: "%0.1fkm", distance))
-							.frame(width: 70, alignment: .trailing)
+					//	Text(String(format: "%0.1fkm", distance))
+					//		.frame(width: 70, alignment: .trailing)
 						//Text( speed > 0 ? String(format: "%.2fkmph", speed) : "-kmph")
-						Text(speed > 0 ? String(format: "%dkmph", Int(speed)) : "-- kmph")
-							.frame(width: 80, alignment: .leading)
-					}
-					.font(.system(size: 16, weight: .bold, design: .rounded))
-					.minimumScaleFactor(0.7)
-					.foregroundStyle(overallDim ? .secondary : .primary)
-					.opacity(0.7)
+					//	Text(speed > 0 ? String(format: "%dkmph", Int(speed)) : "-- kmph")
+					//		.frame(width: 80, alignment: .leading)
+					//}
+					//.font(.system(size: 16, weight: .bold, design: .rounded))
+					//.minimumScaleFactor(0.7)
+					//.foregroundStyle(overallDim ? .secondary : .primary)
+					//.opacity(0.7)
 					
 					
-					if let subtitle {
-						Divider()
-							.frame(maxWidth: 170)
-							.opacity(0.35)
-
-						Text(subtitle)
+					//if let subtitle {
+					HStack{
+						Image(systemName: subtitleIconName ?? "questionmark.circle")
+							.font(.subheadline)
+							.foregroundStyle(.secondary)
+						Text((subtitle?.isEmpty == false ? subtitle : "-") ?? "-")
 							.font(.subheadline)
 							.foregroundStyle(.secondary)
 					}
+					.padding(.bottom, 10)
+					//}
+					statusIndicators
+					
 				}
 				.padding(.horizontal, 16)
 
 				// Optional side percentages (easy to remove if you prefer no text)
-				HStack {
-					SidePctLabel(text: leftShowsSignal ? "\(Int(round(leftProgress * 100)))%" : "—", enabled: leftShowsSignal)
-					Spacer()
-					SidePctLabel(text: rightShowsSignal ? "\(Int(round(rightProgress * 100)))%" : "—", enabled: rightShowsSignal)
-				}
-				.padding(.horizontal, -15)
-				.offset(y: 120)
-				.opacity(0.65)
+				//HStack {
+				//	SidePctLabel(text: leftShowsSignal ? "\(Int(round(leftProgress * 100)))%" : "—", enabled: leftShowsSignal)
+				//	Spacer()
+				//	SidePctLabel(text: rightShowsSignal ? "\(Int(round(rightProgress * 100)))%" : "—", enabled: rightShowsSignal)
+				//}
+				//.padding(.horizontal, -15)
+				//.offset(y: 120)
+				//.opacity(0.65)
 			}
 			.frame(width: size, height: size)
 			.onAppear { configureAnimation() }
@@ -234,6 +255,43 @@ public struct SessionStatusIndicator: View {
 		.accessibilityLabel(accessibilityText)
 	}
 
+	///View Helpers
+	var statusIndicators: some View {
+		HStack{
+			
+			StatusIcon(status: self.leftDeviceStatus ?? DeviceStatus.unknown)
+			StatusIcon(status: self.rightDeviceStatus ?? DeviceStatus.unknown)
+			//ZStack {
+			//	Circle()
+			//		.fill(self.leftDeviceStatus?.color ?? DeviceStatus.unknown.color) // background color
+			//		.frame(width: 28, height: 28)
+			//		.overlay(
+			//			Circle()
+			//				.stroke(self.leftDeviceStatus?.color ?? DeviceStatus.unknown.color, lineWidth: 2) // border color and width
+			//		)
+			//	Image(systemName: self.leftDeviceStatus?.symbolName ?? DeviceStatus.unknown.symbolName)
+			//		.resizable()
+			//		.scaledToFit()
+			//		.frame(width: 15, height: 15)
+			//		.foregroundStyle(Color.white) // icon color
+			//}
+			//ZStack {
+			//	Circle()
+			//		.fill(self.rightDeviceStatus?.color ?? DeviceStatus.unknown.color) // background color
+			//		.frame(width: 28, height: 28)
+			//		.overlay(
+			//			Circle()
+			//				.stroke(self.rightDeviceStatus?.color ?? DeviceStatus.unknown.color, lineWidth: 2) // border color and width
+			//		)
+			//	Image(systemName: self.rightDeviceStatus?.symbolName ?? DeviceStatus.unknown.symbolName)
+			//		.resizable()
+			//		.scaledToFit()
+			//		.frame(width: 15, height: 15)
+			//		.foregroundStyle(Color.white) // icon color
+			//}
+		}
+	}
+	
 	// MARK: - Derived values
 
 	private var leftShowsSignal: Bool {
@@ -426,6 +484,8 @@ struct HalfProgressArcShape: Shape {
 #Preview("Both Connected - Running") {
 	VStack(spacing: 16) {
 		SessionStatusIndicator(
+			leftDeviceStatus: .device_running,
+			rightDeviceStatus: .device_running,
 			leftFatiguePct: 56,
 			rightFatiguePct: 68,
 			leftConnected: true,
@@ -451,6 +511,8 @@ struct HalfProgressArcShape: Shape {
 
 #Preview("One Connected - Paused") {
 	SessionStatusIndicator(
+		leftDeviceStatus: .device_idle,
+		rightDeviceStatus: .device_idle,
 		leftFatiguePct: 34,
 		rightFatiguePct: nil,
 		leftConnected: true,
@@ -469,6 +531,8 @@ struct HalfProgressArcShape: Shape {
 
 #Preview("Both Disconnected - Idle") {
 	SessionStatusIndicator(
+		leftDeviceStatus: .unknown,
+		rightDeviceStatus: .unknown,
 		leftFatiguePct: nil,
 		rightFatiguePct: nil,
 		leftConnected: false,
@@ -487,6 +551,8 @@ struct HalfProgressArcShape: Shape {
 
 #Preview("Stopped - One Missing Value") {
 	SessionStatusIndicator(
+		leftDeviceStatus: .device_idle,
+		rightDeviceStatus: .unknown,
 		leftFatiguePct: 82,
 		rightFatiguePct: nil,
 		leftConnected: true,

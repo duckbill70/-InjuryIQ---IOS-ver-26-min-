@@ -9,6 +9,7 @@
 import CoreBluetooth
 import Combine
 import SwiftUI
+import AudioToolbox
 
 struct FIFOStatusPayload {
 	let samplesStored: UInt32
@@ -57,7 +58,7 @@ enum DeviceState: String {
 	case stopped, running, unknown
 }
 
-enum CommandState: UInt8 {
+public enum CommandState: UInt8 {
 	case cmd_state_off 		= 0x00
 	case cmd_state_idle 	= 0x01
 	case cmd_state_running 	= 0x02
@@ -308,7 +309,7 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 				session.mlTrainingObject.canAddSession(for: location)
 			}
 			guard canAdd else {
-				print("[PeripheralSession] Maximum number of sessions (\(await MainActor.run { session.mlTrainingObject.sets })) reached for \(location.displayName); snapshot ignored.")
+				//print("[PeripheralSession] Maximum number of sessions (\(await MainActor.run { session.mlTrainingObject.sets })) reached for \(location.displayName); snapshot ignored.")
 				return
 			}
 
@@ -324,7 +325,9 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 					try obj.save()
 					try obj.writeExport()
 				}.value
-				print("[PeripheralSession] Saved \(dataPoints.count) IMU samples to MLTrainingObject for \(location.displayName)")
+				//print("[PeripheralSession] Saved \(dataPoints.count) IMU samples to MLTrainingObject for \(location.displayName)")
+				//postImmediateNotification(with: "Saved \(dataPoints.count) training samples for \(location.displayName)")
+				
 			} catch {
 				print("[PeripheralSession] Error saving/exporting MLTrainingObject: \(error)")
 			}

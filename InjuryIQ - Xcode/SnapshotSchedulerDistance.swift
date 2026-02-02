@@ -8,6 +8,8 @@
 
 // InjuryIQ - Xcode/SnapshotSchedulerDistance.swift
 import Foundation
+import AudioToolbox
+import UIKit
 
 final class SnapshotSchedulerDistance {
     private weak var session: Session?
@@ -17,6 +19,18 @@ final class SnapshotSchedulerDistance {
         // For example, divide total distance by sets
 		return Double(obj.distance) / Double(obj.sets)
     }
+	
+	public private(set) var countdown: Int? {
+		didSet {
+			if oldValue != countdown {
+				// Play a default system sound (e.g., 1057 is the "Tock" sound)
+				AudioServicesPlaySystemSound(1057)
+				// Vibrate the phone
+				let generator = UIImpactFeedbackGenerator(style: .heavy)
+				generator.impactOccurred()
+			}
+		}
+	}
 
     init(session: Session) {
         self.session = session
@@ -28,6 +42,7 @@ final class SnapshotSchedulerDistance {
         } else {
             nextSnapshotDistance = nil
         }
+		countdown = nil
     }
 
 	func tick(currentDistance: Double) {
@@ -37,6 +52,18 @@ final class SnapshotSchedulerDistance {
 			  let interval = snapshotDistanceInterval else { return }
 
 		let totalDistance = Double(session.mlTrainingObject.distance)
+		
+		// Update countdown if within 10 meters of next snapshot
+		if let nextDist = nextSnapshotDistance {
+			let distanceToNext = nextDist - currentDistance
+			if distanceToNext <= 10 && distanceToNext > 0 {
+				countdown = Int(ceil(distanceToNext))
+			} else {
+				countdown = nil
+			}
+		} else {
+			countdown = nil
+		}
 
 		// Take snapshots at each interval
 		while let nextDist = nextSnapshotDistance, currentDistance >= nextDist, nextDist < totalDistance {
@@ -51,6 +78,7 @@ final class SnapshotSchedulerDistance {
 			session.logger.append(kind: .bleCommand, metadata: ["snapshot": "Final at \(totalDistance)m"])
 			print("[SnapshotSchedulerDistance] Final snapshot at \(totalDistance)m")
 			nextSnapshotDistance = nil
+			countdown = nil
 		}
 	}
 	

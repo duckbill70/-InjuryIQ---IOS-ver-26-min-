@@ -66,7 +66,11 @@ public extension SessionState {
 // MARK: - Session owner (Observation framework)
 @Observable
 final class Session {
-	var state: SessionState = .stopped
+	var state: SessionState = .stopped {
+		didSet {
+		  print("[Session] State changed from \(oldValue) to \(state)")
+		}
+	}
 	var duration: TimeInterval = 0
 	let logger = SessionLogger()
 	private var bleManager: BLEManager?
@@ -87,6 +91,16 @@ final class Session {
 	///For timer based MLTraining
 	private var snapshotSchedulerDuration: SnapshotSchedulerDuration?
 	private var snapshotSchedulerDistance: SnapshotSchedulerDistance?
+	
+	public var snapshotCountdown: String? {
+		if mlTrainingObject.trainingType == .duration {
+			"\(snapshotSchedulerDuration?.countdown.map { String($0) } ?? "10")"
+		} else if mlTrainingObject.trainingType == .distance {
+			"\(snapshotSchedulerDistance?.countdown.map { String($0) } ?? "10")"
+		} else {
+			nil
+		}
+	}
 	
 	///Location Manager
 	var locationManager = LocationManager()

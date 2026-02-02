@@ -14,6 +14,21 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
 	@Published var locations: [CLLocation] = []
 	
 	var onLocationsUpdate: (([CLLocation]) -> Void)?
+	
+	var maxSpeed: CLLocationSpeed {
+		locations.map { $0.speed }.max() ?? 0
+	}
+
+	// Optionally, add averageSpeed and currentAltitude if not present:
+	var averageSpeed: CLLocationSpeed {
+		guard !locations.isEmpty else { return 0 }
+		let speeds = locations.map { max($0.speed, 0) }
+		return speeds.reduce(0, +) / Double(speeds.count)
+	}
+
+	var currentAltitude: CLLocationDistance {
+		locations.last?.altitude ?? 0
+	}
 
 	override init() {
 		super.init()

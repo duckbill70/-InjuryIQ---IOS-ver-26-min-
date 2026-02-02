@@ -38,12 +38,12 @@ struct ExploreAIView: View {
 							RoundedRectangle(cornerRadius: 14)
 								.strokeBorder(Color.primary.opacity(0.5))
 						)
-					MLObjectFooter(obj: mlObject)
-						.padding()
-						.overlay(
-							RoundedRectangle(cornerRadius: 14)
-								.strokeBorder(Color.primary.opacity(0.5))
-						)
+					//MLObjectFooter(obj: mlObject)
+					//	.padding()
+					//	.overlay(
+					//		RoundedRectangle(cornerRadius: 14)
+					//			.strokeBorder(Color.primary.opacity(0.5))
+					//	)
 				} else {
 					mlObjectView(obj: mlObject)
 						.padding()
@@ -51,12 +51,12 @@ struct ExploreAIView: View {
 							RoundedRectangle(cornerRadius: 14)
 								.strokeBorder(Color.primary.opacity(0.5))
 						)
-					MLObjectFooter(obj: mlObject)
-						.padding()
-						.overlay(
-							RoundedRectangle(cornerRadius: 14)
-								.strokeBorder(Color.primary.opacity(0.5))
-						)
+					//MLObjectFooter(obj: mlObject)
+					//	.padding()
+					//	.overlay(
+					//		RoundedRectangle(cornerRadius: 14)
+					//			.strokeBorder(Color.primary.opacity(0.5))
+					//	)
 				}
 			}
 		}
@@ -160,6 +160,8 @@ struct MLObjectHeader: View {
 						.font(.footnote)
 					Text(obj.trainingType == .distance ? "\(obj.distance)km" :"\(obj.setDuration)min")
 						.font(.footnote)
+					Spacer()
+					shareButton(obj: obj)
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.font(.subheadline)
@@ -173,6 +175,8 @@ struct MLObjectHeader: View {
 						.padding(.trailing, 10)
 					Text("\(obj.sets) sets ")
 						.font(.footnote)
+					Spacer()
+					resetButton(obj: obj)
 				}
 				.frame(maxWidth: .infinity, alignment: .leading)
 				.font(.subheadline)
@@ -181,6 +185,66 @@ struct MLObjectHeader: View {
 		.padding(20)
 	}
 }
+
+struct shareButton: View {
+	@ObservedObject var obj: MLTrainingObject
+	@Environment(Session.self) var session
+	
+	var headerFontSize: CGFloat = 20
+	var chipHeight: CGFloat = 20
+	var body: some View {
+		HStack(){
+			ShareLink(item: obj.exportURL) {
+				Image(systemName: "square.and.arrow.up")
+					.resizable()
+					.scaledToFit()
+					.frame(width: chipHeight, height: chipHeight)
+					.padding(10)
+			}
+			.disabled(session.state == .running)
+			.background(.ultraThinMaterial, in: Circle())
+			.overlay(
+				Circle()
+					.stroke(Color.white.opacity(0.2), lineWidth: 1)
+			)
+			.shadow(radius: 8)
+		}
+	}
+}
+
+struct resetButton: View {
+	@ObservedObject var obj: MLTrainingObject
+	@Environment(Session.self) var session
+	
+	var headerFontSize: CGFloat = 20
+	var chipHeight: CGFloat = 20
+	var body: some View {
+		HStack(){
+			Button(action: {
+				let activity = obj.type
+				try? MLTrainingObject.reset(type: activity)
+				if let newObj = try? MLTrainingObject.load(type: activity) {
+					obj.update(from: newObj)
+					// Ensure export is updated after reset (debounced)
+					obj.debounceExport()
+				}}) {
+				Image(systemName: "arrow.trianglehead.clockwise")
+					.resizable()
+					.scaledToFit()
+					.frame(width: chipHeight, height: chipHeight)
+					.padding(10)
+			}
+			.disabled(session.state == .running)
+			.background(.ultraThinMaterial, in: Circle())
+			.overlay(
+				Circle()
+					.stroke(Color.white.opacity(0.2), lineWidth: 1)
+			)
+			.shadow(radius: 8)
+		}
+	}
+}
+
 
 struct MLObjectFooter: View {
 	@ObservedObject var obj: MLTrainingObject

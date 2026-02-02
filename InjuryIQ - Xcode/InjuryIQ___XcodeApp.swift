@@ -5,12 +5,15 @@ import SwiftUI
 import SwiftData
 import CoreBluetooth
 import Foundation
+import UserNotifications
 
 @main
 struct InjuryIQApp: App {
     private var modelContainer: ModelContainer?
     private var showLaunch: Bool = true
     @State private var showLaunchState: Bool = true
+	
+	private let notificationDelegate = NotificationDelegate()
 	
 	@Environment(\.modelContext) var modelContext
 	//@Environment(Session.self) private var session
@@ -33,7 +36,17 @@ struct InjuryIQApp: App {
             BLEManager.shared.attach(modelContext: ModelContext(fallbackContainer))
         }
 		session.attachBLEManager(BLEManager.shared)
-		//ensureMLTrainingObjectsExist() //loads the ML Trainging Objects
+		
+		// Set the notification delegate here:
+		UNUserNotificationCenter.current().delegate = notificationDelegate
+		
+		UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+			if let error = error {
+				print("[App] Notification permission error: \(error)")
+			}
+			print("[App] Notification permission granted: \(granted)")
+		}
+		
     }
 
 	private func initializeContainer() -> ModelContainer? {

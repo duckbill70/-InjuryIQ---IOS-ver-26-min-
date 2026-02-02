@@ -13,10 +13,10 @@ import SwiftUI
 //case showingLocation = 0x04
 //case unknown = 0xFF
 
-enum DeviceStatus: String {
+public enum DeviceStatus: String {
 	case device_off, device_idle, device_running, device_snapshot, device_showingLocation, unknown
 	
-	init(from commandState: CommandState) {
+	public init(from commandState: CommandState) {
 			switch commandState {
 				case .cmd_state_off			: self = .device_off
 				case .cmd_state_idle		: self = .device_idle
