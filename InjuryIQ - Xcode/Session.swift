@@ -94,9 +94,9 @@ final class Session {
 	
 	public var snapshotCountdown: String? {
 		if mlTrainingObject.trainingType == .duration {
-			"\(snapshotSchedulerDuration?.countdown.map { String($0) } ?? "10")"
+			"\(snapshotSchedulerDuration?.countdown.map { String($0) } ?? "--")"
 		} else if mlTrainingObject.trainingType == .distance {
-			"\(snapshotSchedulerDistance?.countdown.map { String($0) } ?? "10")"
+			"\(snapshotSchedulerDistance?.countdown.map { String($0) } ?? "--")"
 		} else {
 			nil
 		}
@@ -106,24 +106,33 @@ final class Session {
 	var locationManager = LocationManager()
 	
 	init(activityType: ActivityType = .running, mlTrainingObject: MLTrainingObject) {
-		
-		// ... other initializations ...
 		self.type = activityType
-		//self.mlTrainingObject = (try? MLTrainingObject.load(type: activityType)) ?? MLTrainingObject(type: activityType)
 		self.mlTrainingObject = mlTrainingObject
-		
+
 		locationManager.onLocationsUpdate = { [weak self] newLocations in
 			guard let self = self, self.state == .running else { return }
 			for location in newLocations {
+				
+				let speed = max(location.speed, 0)
+				let speedKmph = speed * 3.6
+				let pace = speed > 0 ? 1000.0 / (speed * 60.0) : 0 // min/km
+
 				self.logger.append(kind: .location, metadata: [
 					"lat": "\(location.coordinate.latitude)",
 					"lon": "\(location.coordinate.longitude)",
-					"timestamp": "\(location.timestamp)"
+					"timestamp": "\(location.timestamp)",
+					"speed": "\(max(location.speed, 0))",
+					"speedKmph": "\(speedKmph)",
+					"pace": "\(pace)",
+					"altitude": "\(location.altitude)",
+					"course": "\(location.course)",
+					"accuracy": "\(location.horizontalAccuracy)",
+					"distance": "\(self.locationManager.totalDistance)",
+					"averageSpeedKmph": "\(self.locationManager.averageSpeed)",
 				])
 			}
 		}
 	}
-	
 	
 	func attach(modelContext: ModelContext) {
 		logger.attach(modelContext: modelContext)

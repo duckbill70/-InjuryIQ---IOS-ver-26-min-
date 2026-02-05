@@ -158,7 +158,7 @@ struct MLObjectHeader: View {
 						.padding(.trailing, 10)
 					Text(obj.trainingType == .distance ? "Distance:" : "Interval:")
 						.font(.footnote)
-					Text(obj.trainingType == .distance ? "\(obj.distance)km" :"\(obj.setDuration)min")
+					Text(obj.trainingType == .distance ? "\(obj.distance)km" : "\(String(format: "%.1f", obj.setDuration))min")
 						.font(.footnote)
 					Spacer()
 					shareButton(obj: obj)

@@ -109,12 +109,49 @@ enum Location: String, CaseIterable, Identifiable, Codable {
 	
 }
 
+public enum ImuProfile: UInt8 {
+	
+	case racket 	= 0x00
+	case running 	= 0x01
+	case hiking 	= 0x02
+	case cycling 	= 0x03
+	case skiing 	= 0x04
+	case gesture 	= 0x05
+	
+}
+
+extension ImuProfile {
+	var displayName: String {
+		switch self {
+		case .racket:   return "Racket"
+		case .running:  return "Running"
+		case .hiking:   return "Hiking"
+		case .cycling:  return "Cycling"
+		case .skiing:   return "Skiing"
+		case .gesture:  return "Gesture"
+		}
+	}
+	
+	static func from(activity: ActivityType) -> ImuProfile? {
+			switch activity {
+			case .racket:   return .racket
+			case .running:  return .running
+			case .hiking:   return .hiking
+			case .cycling:  return .cycling
+			case .skiing:   return .skiing
+			case .gesture:  return .gesture
+			}
+		}
+}
+
 struct PeripheralData {
 	
 	var localName		: String?
 	var batteryLevel	: UInt8?
 	var command			: CommandState?
 	var location		: Location?
+	var imuProfile		: ImuProfile?
+	
 	// Add more fields as needed for other characteristic values
 	
 	var errorCode		: UInt8?
@@ -160,10 +197,11 @@ class PeripheralSession: NSObject, ObservableObject, StreamDelegate {
 	@Published var data: PeripheralData
 
 	/// UUIDs for Command Service and its characteristics
-	static let commandServiceUUID = CBUUID(string: "12345679-1234-5678-1234-56789abcdef0")
-	static let commandCharUUID    = CBUUID(string: "12345679-1234-5678-1234-56789abcdef1")
-	static let errorCharUUID      = CBUUID(string: "12345679-1234-5678-1234-56789abcdef5")
-	static let sampleRateUUID      = CBUUID(string: "12345679-1234-5678-1234-56789abcdef6")
+	static let commandServiceUUID 	= CBUUID(string: "12345679-1234-5678-1234-56789abcdef0")
+	static let commandCharUUID    	= CBUUID(string: "12345679-1234-5678-1234-56789abcdef1")
+	static let errorCharUUID      	= CBUUID(string: "12345679-1234-5678-1234-56789abcdef5")
+	static let sampleRateUUID      	= CBUUID(string: "12345679-1234-5678-1234-56789abcdef6")
+	static let imuProfileUUID		= CBUUID(string: "12345679-1234-5678-1234-56789abcdef7")
 	
 	///UUIDs Fatigue Service and its characteristics
 	static let fatigueServiceUUID = CBUUID(string: "12345678-1234-5678-1234-56789abcdef0")
@@ -396,13 +434,14 @@ extension PeripheralSession {
 
 	static func characteristicName(for charUUID: CBUUID, in serviceUUID: CBUUID) -> String {
 		switch (serviceUUID, charUUID) {
-		case (commandServiceUUID, commandCharUUID): return "Command"
-		case (commandServiceUUID, errorCharUUID): return "Error"
-		case (commandServiceUUID, sampleRateUUID): return "Sample Rate"
+		case (commandServiceUUID, commandCharUUID):	return "Command"
+		case (commandServiceUUID, errorCharUUID): 	return "Error"
+		case (commandServiceUUID, sampleRateUUID): 	return "Sample Rate"
+		case (commandServiceUUID, imuProfileUUID): 	return "IMU Profile"
 		case (fatigueServiceUUID, fatigueCharUUID): return "Fatigue"
 		case (fifoServiceUUID, fifoStreamCharUUID): return "Fifo Stream"
 		case (fifoServiceUUID, fifoStatusCharUUID): return "Fifo Status"
-		case (fifoServiceUUID, fifoL2CAPCharUUID): return "Fifo L2CAP"
+		case (fifoServiceUUID, fifoL2CAPCharUUID): 	return "Fifo L2CAP"
 		case (batteryServiceUUID, batteryCharUUID): return "Battery Level"
 		default: return charUUID.uuidString
 		}
@@ -420,6 +459,16 @@ extension PeripheralSession {
 		if char.uuid == PeripheralSession.fifoL2CAPCharUUID {
 			peripheral.readValue(for: char)
 			print("[PeripheralSession] Subscribed to notifications for characteristic: \(charText) from \(serviceText) for peripheral \(data.localName ?? peripheral.identifier.uuidString)")
+		}
+		
+		// If this is the command characteristic, send the IMU profile
+		if char.uuid == PeripheralSession.commandCharUUID {
+			if let getActivity = session?.type,
+			   let profileCode = ImuProfile.from(activity: getActivity)?.rawValue {
+				let data = Data([0x05, profileCode])
+				peripheral.writeValue(data, for: char, type: .withResponse)
+				print("[PeripheralSession] Sent IMU profile \(profileCode) to \(self.data.localName ?? peripheral.identifier.uuidString)")
+			}
 		}
 
 		if char.properties.contains(.notify) {
@@ -480,6 +529,12 @@ extension PeripheralSession {
 			case (PeripheralSession.commandServiceUUID, PeripheralSession.errorCharUUID):
 				data.errorCode = value.first
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")
+			
+			case (PeripheralSession.commandServiceUUID, PeripheralSession.imuProfileUUID) :
+				if let raw = value.first, let profile = ImuProfile(rawValue: raw) {
+					data.imuProfile = profile
+				}
+			print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(data.imuProfile?.displayName ?? "unknown")")
 			
 			case (PeripheralSession.fifoServiceUUID, PeripheralSession.fifoStreamCharUUID):
 				print("[PeripheralSession] Notification from \(data.localName ?? peripheral.identifier.uuidString) for \(serviceText) / \(charText): \(value as NSData)")

@@ -20,18 +20,18 @@ final class SnapshotSchedulerDuration {
         return (Double(obj.setDuration) * 60.0) / Double(obj.sets)
     }
 
-	public private(set) var countdown: Int? {
-		didSet {
-			if oldValue != countdown {
+	public private(set) var countdown: Int? //{
+		//didSet {
+		//	if oldValue != countdown {
 				// Play a default system sound (e.g., 1057 is the "Tock" sound)
-				AudioServicesPlaySystemSound(1057)
+		//		AudioServicesPlaySystemSound(1057)
 				// Vibrate the phone
-				let generator = UIImpactFeedbackGenerator(style: .heavy)
-				generator.impactOccurred()
+		//		let generator = UIImpactFeedbackGenerator(style: .heavy)
+		//		generator.impactOccurred()
 				//playCustomHaptic()
-			}
-		}
-	}
+		//	}
+		//}
+	//}
 	
     init(session: Session) {
         self.session = session
@@ -54,8 +54,18 @@ final class SnapshotSchedulerDuration {
 			let nextTime = nextSnapshotTime else { return }
 		
 		let timeToNext = nextTime - currentDuration
-		if timeToNext <= 10 && timeToNext > 0 {
-			countdown = Int(ceil(timeToNext))
+		let intTimeToNext = Int(ceil(timeToNext))
+
+		// Play "tock" for 20–11s, "beep" for 10–1s, "ding" for 0s
+		if intTimeToNext <= 30 && intTimeToNext > 21 {
+			playTock()
+			countdown = intTimeToNext
+		} else if intTimeToNext <= 20 && intTimeToNext > 0 {
+			playBeep()
+			countdown = intTimeToNext
+		} else if intTimeToNext == 0 {
+			playDing()
+			countdown = intTimeToNext
 		} else {
 			countdown = nil
 		}
@@ -68,6 +78,24 @@ final class SnapshotSchedulerDuration {
 			countdown = nil
 		}
     }
+	
+	private func playTock() {
+		AudioServicesPlaySystemSound(1057) // "Tock"
+		let generator = UIImpactFeedbackGenerator(style: .light)
+		generator.impactOccurred()
+	}
+
+	private func playBeep() {
+		AudioServicesPlaySystemSound(1052) // "Beep" (or pick another suitable sound)
+		let generator = UIImpactFeedbackGenerator(style: .heavy)
+		generator.impactOccurred()
+	}
+	
+	private func playDing() {
+		AudioServicesPlaySystemSound(1054) // "Ding" or pick another suitable sound
+		let generator = UINotificationFeedbackGenerator()
+		generator.notificationOccurred(.success)
+	}
 	
 	var engine: CHHapticEngine?
 

@@ -158,7 +158,7 @@ class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equa
 	@Published var sessions: [Location: [mlTrainingSession]]
 	@Published var distance: Int
 	@Published var sets: Int
-	@Published var setDuration: Int
+	@Published var setDuration: Double
 
 	// Debounced export task
 	private var exportTask: Task<Void, Never>?
@@ -169,7 +169,7 @@ class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equa
 		case active, type, sessions, distance, sets, setDuration
 	}
 
-	init(type: ActivityType, sessions: [Location: [mlTrainingSession]] = [:], distance: Int? = nil, sets: Int? = nil, setDuration: Int? = nil, uuid: UUID = UUID()) {
+	init(type: ActivityType, sessions: [Location: [mlTrainingSession]] = [:], distance: Int? = nil, sets: Int? = nil, setDuration: Double? = nil, uuid: UUID = UUID()) {
 		self.uuid = uuid
 		self.type = type
 		self.sessions = sessions
@@ -185,7 +185,7 @@ class MLTrainingObject: ObservableObject, Codable, CustomStringConvertible, Equa
 		self.sessions = try container.decode([Location: [mlTrainingSession]].self, forKey: .sessions)
 		self.distance = try container.decode(Int.self, forKey: .distance)
 		self.sets = try container.decode(Int.self, forKey: .sets)
-		self.setDuration = try container.decode(Int.self, forKey: .setDuration)
+		self.setDuration = try container.decode(Double.self, forKey: .setDuration)
 	}
 
 	func encode(to encoder: Encoder) throws {

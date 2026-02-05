@@ -10,14 +10,16 @@ import SwiftUI
 import CoreLocation
 
 struct SessionStatsView: View {
-	@Environment(Session.self) var session
+
+	@Bindable var session: Session
 
 	var body: some View {
 
+		///1 m/s × 3.6 = 3.6 km/h
 		
 		HStack() {
 			VStack(alignment: .leading, spacing: 10) {
-				StatItem(label: "Max Speed", value: String(format: "%.1f km/h", session.locationManager.maxSpeed * 3.6))
+				StatItem(label: "Max Speed", value: String(format: "%.1f km/h", max(0, session.locationManager.maxSpeed) * 3.6))
 				StatItem(label: "Distance", value: String(format: "%.1f km", session.currentDistance / 1000))
 			}
 			Spacer()
@@ -27,7 +29,7 @@ struct SessionStatsView: View {
 			}
 			Spacer()
 			VStack(alignment: .leading, spacing: 10) {
-				StatItem(label: "Avg Speed", value: String(format: "%.1f km/h", session.locationManager.averageSpeed * 3.6))
+				StatItem(label: "Avg Speed", value: String(format: "%.1f km/h", max(0, session.locationManager.averageSpeed) * 3.6))
 				StatItem(label: "Pace", value: String(format: "%.1f min/km", session.currentSpeed > 0 ? Double(1000) / (session.currentSpeed * 60) : 0.0))
 			}
 		}
@@ -66,9 +68,7 @@ struct StatItem: View {
 
 #Preview {
 	let mockSession = Session(activityType: .running, mlTrainingObject: MLTrainingObject(type: .running))
-	// Optionally, add mock data to the session/locationManager here
-	return SessionStatsView()
-		.environment(mockSession)
+
+	SessionStatsView(session: mockSession)
 		.padding()
-		//.previewLayout(.sizeThatFits)
 }

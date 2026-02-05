@@ -15,6 +15,7 @@ public enum ActivityType: String, Codable, CaseIterable {
 	case racket = "Racket"
 	case cycling = "Cycling"
 	case skiing = "Skiing"
+	case gesture = "Gesture"
 }
 
 public enum MLTrainingType {
@@ -60,6 +61,12 @@ struct ActivityButton: Identifiable {
 			icon: ActivityType.skiing.icon,
 			selectedColor: ActivityType.skiing.activityColor,
 			unselectedColor: Color(.systemGray6)
+		),
+		ActivityButton(
+			type: .gesture,
+			icon: ActivityType.gesture.icon,
+			selectedColor: ActivityType.gesture.activityColor,
+			unselectedColor: Color(.systemGray6)
 		)
 	]
 }
@@ -73,6 +80,7 @@ extension ActivityType {
 		case .racket: return "Racket"
 		case .cycling: return "Cycling"
 		case .skiing: return "Skiing"
+		case .gesture: return "Raw"
 		}
 	}
 	
@@ -83,6 +91,7 @@ extension ActivityType {
 		case .racket: return "figure.tennis"
 		case .cycling: return "figure.outdoor.cycle"
 		case .skiing: return "figure.skiing.downhill"
+		case .gesture: return "gyroscope"
 		}
 	}
 	
@@ -93,6 +102,7 @@ extension ActivityType {
 		case .racket: return .mint
 		case .cycling: return .red
 		case .skiing: return .green
+		case .gesture: return .secondary
 		}
 	}
 	
@@ -103,6 +113,7 @@ extension ActivityType {
 		case .racket: return 0
 		case .cycling: return 10
 		case .skiing: return 10
+		case .gesture: return 0
 		}
 	}
 	
@@ -113,16 +124,19 @@ extension ActivityType {
 		case .racket: return 3
 		case .cycling: return 3
 		case .skiing: return 3
+		case .gesture: return 1
 		}
 	}
 	
-	var mlDuration: Int {
+	///NB there must be enougt time between sets for a 30 second fifo buffer to fill, otherwiise there will be errors
+	var mlDuration: Double {
 		switch self {
 		case .running: return 0
 		case .hiking: return 0
-		case .racket: return 3
+		case .racket: return 60
 		case .cycling: return 0
 		case .skiing: return 0
+		case .gesture: return 1
 		}
 	}
 	
@@ -133,6 +147,7 @@ extension ActivityType {
 		case .racket: return .duration
 		case .cycling: return .distance
 		case .skiing: return .distance
+		case .gesture: return .duration
 		}
 	}
 	
@@ -143,6 +158,8 @@ extension ActivityType {
 			case .racket: return [Location.leftfoot, Location.rightfoot] ///Furture are left and right hands
 			case .cycling: return [Location.leftfoot, Location.rightfoot]
 			case .skiing: return [Location.leftfoot, Location.rightfoot]
+			case .gesture: return [Location.leftfoot, Location.rightfoot]
+			//case .gesture: return [Location.leftfoot]
 		}
 	}
 	

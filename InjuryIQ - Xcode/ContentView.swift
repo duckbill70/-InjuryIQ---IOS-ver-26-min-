@@ -69,7 +69,7 @@ struct ContentView: View {
 					Spacer()
 					
 					if session.state != .stopped {
-						SessionStatsView()
+						SessionStatsView(session: session)
 							.frame(maxWidth: .infinity)
 							.padding(.horizontal)
 							.transition(
@@ -169,6 +169,23 @@ struct ContentView: View {
 
 	}
 	
+
+	func setIMUProfile(for activity: ActivityType) {
+		//print("[ContentView] setIMUProfile called for \(activity)")
+		guard let profileCode = ImuProfile.from(activity: activity)?.rawValue else { return }
+		for session in ble.sessionsByPeripheral.values {
+			let data = Data([0x05, profileCode])
+			let hexString = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+			if let char = session.characteristics[CharKey(
+				service: PeripheralSession.commandServiceUUID,
+				characteristic: PeripheralSession.commandCharUUID
+			)] {
+				print("[ContentView] setIMUProfile writeValue to \(session.peripheral.identifier) data (\(data.count) bytes): \(hexString)")
+				session.peripheral.writeValue(data, for: char, type: .withResponse)
+			}
+		}
+	}
+	
 	private var activityButtons: some View {
 		
 		
@@ -177,7 +194,16 @@ struct ContentView: View {
 				HStack(spacing: 12) {
 					ForEach(ActivityButton.activities) { activity in
 						Button(
-							action: { sports.selectedActivity = activity.type }
+							action: {
+								
+								
+								///Set the sport
+								sports.selectedActivity = activity.type
+								
+								///
+								setIMUProfile(for: activity.type)
+								
+							}
 						) {
 							VStack {
 								Image(systemName: activity.icon)

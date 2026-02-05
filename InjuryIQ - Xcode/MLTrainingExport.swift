@@ -35,7 +35,7 @@ struct MLTrainingExport: Encodable {
 			let uuid: UUID
 			let sport: String
 			let sets: Int
-			let duration: Int
+			let duration: Double
 			let distance: Int
 		}
 

@@ -335,13 +335,19 @@ struct DeviceManager: View {
 					.frame(width: 56, height: 56)
 					.foregroundColor(batteryState.color)
 				))
+				if let rssi = ble.sessionsByPeripheral[device.uuid]?.data.rssi {
+					result.append(AnyView(Text("RSSI: \(rssi)")
+						.font(.system(size: 14, weight: .semibold))
+						.foregroundColor(.secondary)))
+					}
+			} else {
+				//result.append(AnyView(Text(device.uuid.uuidString.suffix(4))
+				//	.font(.system(size: 14, weight: .semibold))
+				//	.foregroundColor(.secondary)))
+				result.append(AnyView(Text("----")
+					.font(.system(size: 14, weight: .semibold))
+					.foregroundColor(.secondary)))
 			}
-			//result.append(AnyView(Text(device.uuid.uuidString.suffix(4))
-			//	.font(.system(size: 14, weight: .semibold))
-			//	.foregroundColor(.secondary)))
-			result.append(AnyView(Text("----")
-				.font(.system(size: 14, weight: .semibold))
-				.foregroundColor(.secondary)))
 			return result
 		}
 
